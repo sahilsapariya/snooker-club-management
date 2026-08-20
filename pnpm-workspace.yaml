@@ -1,0 +1,20 @@
+packages:
+  - 'apps/*'
+  # - 'packages/*'   # add when a genuinely shared module exists
+
+# React Native needs a flat node_modules layout: Metro's resolver and the
+# native autolinking step do not reliably follow pnpm's default symlinked
+# store. (pnpm >= 10 reads these settings here, not from .npmrc.)
+nodeLinker: hoisted
+
+# Surface real incompatibilities without failing installs on the peer drift
+# that is endemic to the React Native ecosystem.
+strictPeerDependencies: false
+autoInstallPeers: true
+
+# Packages allowed to run postinstall scripts (pnpm blocks them by default).
+allowBuilds:
+  esbuild: true
+  supabase: true
+  unrs-resolver: true
+  sharp: true

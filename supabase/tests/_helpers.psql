@@ -1,0 +1,63 @@
+-- Shared fixture identifiers and role-switching helpers for the pgTAP suite.
+-- pg_prove runs each file in its own session, so this file is \i-included by
+-- every test rather than being a test itself.
+--
+-- Switching "user" means two things at once: become the `authenticated`
+-- Postgres role (so RLS actually applies - `postgres` has BYPASSRLS) and set
+-- the JWT claims that auth.uid() reads.
+
+create or replace function pg_temp.act_as(p_user uuid)
+returns void language plpgsql as $fn$
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_user::text, 'role', 'authenticated', 'aud', 'authenticated')::text, true);
+  perform set_config('role', 'authenticated', true);
+end
+$fn$;
+
+create or replace function pg_temp.act_as_anon()
+returns void language plpgsql as $fn$
+begin
+  perform set_config('request.jwt.claims', '', true);
+  perform set_config('role', 'anon', true);
+end
+$fn$;
+
+-- Back to the migration/superuser-ish role that bypasses RLS.
+create or replace function pg_temp.act_as_system()
+returns void language plpgsql as $fn$
+begin
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '', true);
+end
+$fn$;
+
+-- Fixture ids, mirroring supabase/seed.sql.
+create or replace function pg_temp.platform_admin() returns uuid language sql immutable
+  as $fn$ select '11111111-1111-4111-8111-111111111111'::uuid $fn$;
+create or replace function pg_temp.royal_owner() returns uuid language sql immutable
+  as $fn$ select '22222222-2222-4222-8222-222222222222'::uuid $fn$;
+create or replace function pg_temp.royal_reception() returns uuid language sql immutable
+  as $fn$ select '33333333-3333-4333-8333-333333333333'::uuid $fn$;
+create or replace function pg_temp.blue_owner() returns uuid language sql immutable
+  as $fn$ select '44444444-4444-4444-8444-444444444444'::uuid $fn$;
+create or replace function pg_temp.blue_reception() returns uuid language sql immutable
+  as $fn$ select '55555555-5555-4555-8555-555555555555'::uuid $fn$;
+create or replace function pg_temp.royal() returns uuid language sql immutable
+  as $fn$ select 'aaaaaaaa-0000-4000-8000-000000000001'::uuid $fn$;
+create or replace function pg_temp.blue() returns uuid language sql immutable
+  as $fn$ select 'bbbbbbbb-0000-4000-8000-000000000002'::uuid $fn$;
+
+-- Runs a DML statement as the *current* role (SECURITY INVOKER, so RLS applies)
+-- and reports how many rows it actually touched. Used to prove that a
+-- cross-tenant UPDATE/DELETE silently matches nothing rather than erroring.
+create or replace function pg_temp.rows_affected(p_sql text)
+returns integer language plpgsql as $fn$
+declare
+  v_count integer;
+begin
+  execute p_sql;
+  get diagnostics v_count = row_count;
+  return v_count;
+end
+$fn$;

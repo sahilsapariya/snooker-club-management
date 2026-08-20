@@ -1,0 +1,46 @@
+{
+  "name": "snooker-club-management",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-tenant SaaS for operating snooker, pool and billiards clubs.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.19.0",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@11.22.0",
+  "scripts": {
+    "dev": "pnpm --filter @snooker/mobile start",
+    "mobile": "pnpm --filter @snooker/mobile start",
+    "mobile:android": "pnpm --filter @snooker/mobile android",
+    "mobile:ios": "pnpm --filter @snooker/mobile ios",
+    "mobile:web": "pnpm --filter @snooker/mobile web",
+    "mobile:prebuild": "pnpm --filter @snooker/mobile prebuild",
+    "doctor": "pnpm --filter @snooker/mobile doctor",
+    "supabase": "supabase",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:status": "supabase status",
+    "db:reset": "supabase db reset",
+    "db:migrate": "supabase migration up --local",
+    "db:push": "supabase db push",
+    "db:diff": "supabase db diff -f",
+    "db:lint": "supabase db lint --level warning",
+    "db:test": "supabase test db",
+    "db:types": "supabase gen types typescript --local --schema public > apps/mobile/src/types/database.types.ts && prettier --write apps/mobile/src/types/database.types.ts",
+    "db:types:remote": "supabase gen types typescript --linked --schema public > apps/mobile/src/types/database.types.ts && prettier --write apps/mobile/src/types/database.types.ts",
+    "typecheck": "pnpm --filter @snooker/mobile typecheck",
+    "lint": "pnpm --filter @snooker/mobile lint",
+    "lint:fix": "pnpm --filter @snooker/mobile lint:fix",
+    "test": "pnpm --filter @snooker/mobile test",
+    "test:ci": "pnpm --filter @snooker/mobile test:ci",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "verify:db": "supabase db lint --level warning && supabase test db"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6",
+    "supabase": "^2.115.0"
+  }
+}

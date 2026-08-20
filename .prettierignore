@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+coverage/
+.expo/
+apps/mobile/android/
+apps/mobile/ios/
+pnpm-lock.yaml
+# Generated from the database schema.
+apps/mobile/src/types/database.types.ts
+# SQL is hand-formatted for readability; Prettier has no Postgres parser here.
+supabase/migrations/
+supabase/seed.sql
+supabase/tests/
