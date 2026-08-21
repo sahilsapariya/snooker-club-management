@@ -201,6 +201,42 @@ Two read models, both `security_invoker = true` so RLS still applies:
 
 ---
 
+## Reporting functions
+
+Aggregates live in SQL rather than the client, because summing a quarter's
+sessions on a phone means shipping a quarter's sessions to it.
+
+| Function                                     | Returns                                                        |
+| -------------------------------------------- | -------------------------------------------------------------- |
+| `daily_cash_summary(tenant, date)`           | takings and spend for one trading day, split by payment method |
+| `report_revenue_summary(tenant, from, to)`   | headline figures, including played vs billed seconds           |
+| `report_daily_revenue(tenant, from, to)`     | one row per day, zero-filled so gaps stay visible              |
+| `report_table_performance(tenant, from, to)` | sessions, takings and time played per table                    |
+| `report_product_sales(tenant, from, to)`     | quantity and revenue, from the sale-time snapshots             |
+| `report_expense_breakdown(tenant, from, to)` | spend per category                                             |
+
+Plus `v_outstanding_sessions`, a view of closed sessions with money still owed.
+
+**Every one of them is `SECURITY INVOKER`.** They take a `tenant_id` argument,
+but that argument is not the security boundary - RLS is. A `SECURITY DEFINER`
+function here would total another club's takings for anyone who passed a
+different id, which is why `01_tenant_isolation.test.sql` points each report at
+another club and asserts it returns nothing.
+
+Ranges are over the tenant-local **business date**, never a timestamp range, so
+a club trading past midnight does not scatter its late sessions across two days.
+
+## Migration 0012: the business date belongs to the server
+
+`sessions.business_date` has a default _and_ a trigger that always derives it.
+The default exists so PostgREST marks the column optional; the trigger exists so
+a supplied value is discarded. Together a client can neither omit it nor forge
+it — verified by a test that sends `1999-01-01` and gets the correct date back.
+
+`expenses.expense_date` deliberately keeps fill-if-null behaviour instead: an
+expense legitimately belongs to a date the user chooses, such as recording
+yesterday's electricity bill this morning.
+
 ## Changing the schema
 
 ```bash

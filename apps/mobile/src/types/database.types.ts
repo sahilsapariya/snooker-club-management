@@ -912,6 +912,13 @@ export type Database = {
             referencedColumns: ["tenant_id", "id"]
           },
           {
+            foreignKeyName: "session_items_session_same_tenant"
+            columns: ["tenant_id", "session_id"]
+            isOneToOne: false
+            referencedRelation: "v_outstanding_sessions"
+            referencedColumns: ["tenant_id", "id"]
+          },
+          {
             foreignKeyName: "session_items_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -1392,6 +1399,29 @@ export type Database = {
           },
         ]
       }
+      v_outstanding_sessions: {
+        Row: {
+          business_date: string | null
+          customer_name: string | null
+          ended_at: string | null
+          id: string | null
+          outstanding_minor: number | null
+          paid_amount_minor: number | null
+          payment_status: Database["public"]["Enums"]["payment_status"] | null
+          table_name: string | null
+          tenant_id: string | null
+          total_amount_minor: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sessions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       add_tenant_member: {
@@ -1562,6 +1592,62 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      report_daily_revenue: {
+        Args: { p_from: string; p_tenant_id: string; p_to: string }
+        Returns: {
+          business_date: string
+          collected_minor: number
+          expenses_minor: number
+          net_minor: number
+          sessions_count: number
+        }[]
+      }
+      report_expense_breakdown: {
+        Args: { p_from: string; p_tenant_id: string; p_to: string }
+        Returns: {
+          category_id: string
+          category_name: string
+          entries_count: number
+          total_minor: number
+        }[]
+      }
+      report_product_sales: {
+        Args: { p_from: string; p_tenant_id: string; p_to: string }
+        Returns: {
+          product_id: string
+          product_name: string
+          quantity_sold: number
+          revenue_minor: number
+        }[]
+      }
+      report_revenue_summary: {
+        Args: { p_from: string; p_tenant_id: string; p_to: string }
+        Returns: {
+          average_session_minor: number
+          billed_seconds: number
+          cash_minor: number
+          collected_minor: number
+          discount_minor: number
+          gross_minor: number
+          items_minor: number
+          non_cash_minor: number
+          outstanding_minor: number
+          played_seconds: number
+          sessions_count: number
+          table_charge_minor: number
+        }[]
+      }
+      report_table_performance: {
+        Args: { p_from: string; p_tenant_id: string; p_to: string }
+        Returns: {
+          collected_minor: number
+          played_seconds: number
+          sessions_count: number
+          table_id: string
+          table_name: string
+          table_type_name: string
+        }[]
       }
     }
     Enums: {

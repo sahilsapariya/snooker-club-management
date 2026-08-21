@@ -12,7 +12,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 \ir _helpers.psql
-select plan(34);
+select plan(41);
 
 -- ---------------------------------------------------------------------------
 -- Reads: a member sees their own club and nothing else
@@ -146,6 +146,60 @@ select is(
 
 select is((select count(*)::int from public.cash_closings where tenant_id = pg_temp.blue()), 0,
           'Royal staff see zero Blue Cue cash closings');
+
+-- ---------------------------------------------------------------------------
+-- Reporting must not become a cross-tenant leak either
+-- ---------------------------------------------------------------------------
+-- Every report function is SECURITY INVOKER. If any of them were declared
+-- DEFINER, a member of one club could total up another club's takings simply
+-- by passing a different tenant id - the arguments are not the security
+-- boundary, RLS is. Each assertion below points a report at Blue Cue from a
+-- Royal session and expects nothing back.
+select pg_temp.act_as(pg_temp.royal_owner());
+
+select is(
+  (select collected_minor
+     from public.report_revenue_summary(pg_temp.blue(), current_date - 400, current_date)),
+  0::bigint,
+  'the revenue summary returns nothing for a club the caller is not in');
+
+-- sum() over bigint yields numeric, hence the explicit cast.
+select is(
+  (select coalesce(sum(collected_minor), 0)::bigint
+     from public.report_daily_revenue(pg_temp.blue(), current_date - 30, current_date)),
+  0::bigint,
+  'the daily trend returns nothing for another club');
+
+select is(
+  (select count(*)::int
+     from public.report_table_performance(pg_temp.blue(), current_date - 400, current_date)),
+  0,
+  'table performance lists none of another club''s tables');
+
+select is(
+  (select count(*)::int
+     from public.report_product_sales(pg_temp.blue(), current_date - 400, current_date)),
+  0,
+  'product sales lists none of another club''s sales');
+
+select is(
+  (select count(*)::int
+     from public.report_expense_breakdown(pg_temp.blue(), current_date - 400, current_date)),
+  0,
+  'the expense breakdown lists none of another club''s spend');
+
+select is(
+  (select count(*)::int from public.v_outstanding_sessions where tenant_id = pg_temp.blue()),
+  0,
+  'outstanding balances leak nothing across clubs');
+
+-- And the same reports do work for the caller's own club, so the assertions
+-- above are proving isolation rather than a function that always returns zero.
+select isnt(
+  (select count(*)::int
+     from public.report_table_performance(pg_temp.royal(), current_date - 400, current_date)),
+  0,
+  'the same report does return the caller''s own tables');
 
 -- ---------------------------------------------------------------------------
 -- The platform operator sees across clubs

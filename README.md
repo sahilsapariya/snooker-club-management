@@ -43,6 +43,23 @@ Club staff can never change the platform-controlled fields (name, logo,
 colours, currency, timezone, status). That is enforced in the database, not by
 hiding buttons — see [section 9](#9-how-tenant-isolation-works).
 
+### What works today
+
+| Area                                                | State                                                          |
+| --------------------------------------------------- | -------------------------------------------------------------- |
+| Sign in, roles, club resolution, theming            | done                                                           |
+| Tables floor view with live occupancy               | done                                                           |
+| Session lifecycle: start, time-up, close, cancel    | done                                                           |
+| Configurable billing engine                         | done                                                           |
+| Food and drink on a bill, with stock ledger         | done                                                           |
+| Payments: full, partial, discount, waive            | done                                                           |
+| Expenses and cash-drawer reconciliation             | done                                                           |
+| Reports: revenue, tables, products, expenses, debts | done                                                           |
+| Owner configuration of products and pricing         | done                                                           |
+| Platform admin: club list and detail                | read-only                                                      |
+| Push notification delivery                          | not built (see [docs/notifications.md](docs/notifications.md)) |
+| Equipment screens                                   | not built                                                      |
+
 Two business rules the whole design protects:
 
 - **Recorded time and billed time are different numbers.** A 60-minute booking

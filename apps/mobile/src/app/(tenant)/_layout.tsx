@@ -1,5 +1,5 @@
 import { Redirect, Tabs } from 'expo-router';
-import { Bell, LayoutGrid, Settings, SlidersHorizontal, Timer, Wallet } from 'lucide-react-native';
+import { Bell, LayoutGrid, MoreHorizontal, Timer, Wallet } from 'lucide-react-native';
 
 import { LoadingState, Screen } from '@/components/ui';
 import { useAppSession } from '@/features/auth';
@@ -8,6 +8,11 @@ import { useTheme } from '@/theme';
 
 /**
  * Club staff shell.
+ *
+ * Only the four things a receptionist touches during a shift get a tab, plus
+ * "More". Reports, Manage and Settings are routable but hidden from the bar
+ * (`href: null`) - a six or seven item tab bar makes every target too small to
+ * hit reliably one-handed at a counter.
  *
  * The redirect keeps a non-club user out of these screens, but it is a UX
  * guarantee, not a security one: were someone to reach `/tables` anyway, every
@@ -77,19 +82,17 @@ export default function TenantLayout() {
         }}
       />
       <Tabs.Screen
-        name="manage"
+        name="more"
         options={{
-          title: 'Manage',
-          tabBarIcon: ({ color, size }) => <SlidersHorizontal color={color} size={size} />,
+          title: 'More',
+          tabBarIcon: ({ color, size }) => <MoreHorizontal color={color} size={size} />,
         }}
       />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: ({ color, size }) => <Settings color={color} size={size} />,
-        }}
-      />
+
+      {/* Reachable by route, deliberately absent from the tab bar. */}
+      <Tabs.Screen name="reports" options={{ href: null, title: 'Reports' }} />
+      <Tabs.Screen name="manage" options={{ href: null, title: 'Manage club' }} />
+      <Tabs.Screen name="settings" options={{ href: null, title: 'Settings' }} />
     </Tabs>
   );
 }

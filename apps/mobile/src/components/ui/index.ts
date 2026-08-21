@@ -42,3 +42,4 @@ export {
   type QuantityStepperProps,
 } from './ListItem';
 export { MoneyInput, type MoneyInputProps } from './MoneyInput';
+export { BarChart, type BarChartProps, type BarDatum } from './BarChart';

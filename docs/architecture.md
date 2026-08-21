@@ -168,20 +168,79 @@ session; the database decides what that identity can reach.
 
 ---
 
+## Money: two pure functions
+
+Both live in `features/billing`, both have no clock, no database and no I/O, and
+both are heavily unit-tested. That is deliberate: a mistake in either does not
+crash anything, it silently charges the wrong amount for months.
+
+**`calculateSessionCharge`** turns recorded time into a charge. Four
+time-calculation modes, four rounding modes, grace period, four overtime modes,
+minimum billable time, per-frame and flat-session pricing, custom slabs. It
+produces `billable_duration_seconds` and never `actual_duration_seconds` - the
+latter is a generated column Postgres refuses to accept a value for.
+
+Grace semantics are a choice worth knowing: an overrun **inside** the grace is
+forgiven entirely, and once the grace is exceeded, overtime is measured from the
+end of the booking rather than the end of the grace. That creates a deliberate
+cliff (65 min against a 60 min booking pays for 60; 66 min pays for 66), which
+is how grace periods conventionally work.
+
+**`settleSession`** turns "what is owed" and "what was handed over" into the row
+the database expects. It exists because two check constraints have sharp edges:
+a discount above the bill is rejected outright, and a `PAID` row without a
+payment method is refused. It clamps and warns rather than letting a save fail
+at the counter, and treats over-tendering as change rather than revenue.
+
+## Pricing is snapshotted, not looked up
+
+A session stores the pricing rule it started under in `pricing_snapshot`, and
+`pricingRuleFromSnapshot()` rebuilds it when the bill is computed. Reading the
+live rule instead would mean a club raising its rates at 8pm silently reprices
+every session still running from 7pm. This is why editing prices mid-evening is
+safe.
+
+## Reporting
+
+`features/reports` calls SQL functions that aggregate in Postgres
+(`report_revenue_summary`, `report_daily_revenue`, `report_table_performance`,
+`report_product_sales`, `report_expense_breakdown`) plus the
+`v_outstanding_sessions` view.
+
+All of them are **SECURITY INVOKER**. For a function that totals money this is
+the whole ballgame: a definer function would add up another club's takings for
+anyone who passed a different tenant id. The arguments are not the security
+boundary; RLS is. `01_tenant_isolation.test.sql` points every report at another
+club and asserts it returns nothing.
+
+Ranges are expressed in the club's **business** calendar, so a club trading past
+midnight does not see its late sessions land on the wrong day.
+
 ## Deliberate omissions
 
-Scaffolded but not implemented, so the next stage lands in a shaped space:
-
-- **Billing engine.** The rules are fully modelled
-  (`tenant_billing_settings`, `pricing_rules`) and `plannedTimeProgress()`
-  handles the elapsed-vs-booked arithmetic. The function that turns a session
-  into a charge is not written.
-- **Session workflow.** Start, add items, take payment, close.
-- **Reports, inventory and expense screens.**
-- **Push delivery.** Tokens are captured and stored; sending needs a server-side
-  worker (see [notifications.md](notifications.md)).
+- **Push delivery.** Tokens are captured and stored; sending needs a
+  server-side worker holding an Expo access token (see
+  [notifications.md](notifications.md)) and a development build.
+- **Equipment screens.** The schema and RLS exist; no UI yet.
+- **Platform admin editing.** The platform screens are read-only; branding
+  changes go through the RPCs but have no form yet.
 - **Offline sync.** Query caching handles brief drops. Real offline-first is a
   separate design.
+- **Multi-club staff.** The membership table is many-to-many already; a single
+  partial unique index enforces one active club per user today.
 
 Not planned: a repository layer, a DTO layer, microservices, or a shared
 `packages/` module until two consumers actually exist.
+
+## Navigation
+
+Five tabs, because a six or seven item bar makes every target too small to hit
+one-handed at a counter:
+
+```
+Tables · Sessions · Cash · Alerts · More
+```
+
+Reports, Manage and Settings are routable but hidden from the bar
+(`href: null` in `(tenant)/_layout.tsx`) and reached from **More**. The tabs are
+the four things a receptionist touches during a shift.
