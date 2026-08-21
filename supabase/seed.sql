@@ -312,12 +312,14 @@ where s.tenant_id = 'aaaaaaaa-0000-4000-8000-000000000001'
 -- ---------------------------------------------------------------------------
 -- Notifications
 -- ---------------------------------------------------------------------------
-insert into public.notifications (tenant_id, recipient_user_id, type, title, body, metadata)
-values
-  ('aaaaaaaa-0000-4000-8000-000000000001', null, 'LOW_STOCK', 'Cola 300ml is running low',
-   'Stock has fallen to or below the configured threshold.', jsonb_build_object('product_name', 'Cola 300ml')),
-  ('aaaaaaaa-0000-4000-8000-000000000001', '22222222-2222-4222-8222-222222222222', 'SESSION_STARTED',
-   'Snooker 1 is in play', 'A session was started by the receptionist.', '{}'::jsonb);
+-- Nothing is seeded by hand. Since migration 0019 the triggers raise these
+-- themselves, so the fixture above has already produced both shapes: an
+-- owner-targeted SESSION_STARTED from the open session, and a broadcast
+-- LOW_STOCK from the stock movement that took Cola below its threshold.
+--
+-- Writing them by hand as well would put two subtly different versions of the
+-- same alert in the inbox, and teach the wrong thing about the product on the
+-- first screen anybody looks at.
 
 -- ---------------------------------------------------------------------------
 -- Activity log — a few representative operational events.

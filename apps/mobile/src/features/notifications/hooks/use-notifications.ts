@@ -36,6 +36,37 @@ export function useNotificationInbox(tenantId: string | null) {
   });
 }
 
+/**
+ * How many alerts this club has that nobody has looked at.
+ *
+ * A separate query from the inbox, using `head: true` so it costs a count and
+ * not the rows: the tab badge is mounted on every screen, and the inbox itself
+ * is only mounted when somebody opens it.
+ *
+ * The count is what RLS returns, so it is already the right number for this
+ * user - a receptionist does not see, or count, an owner-only alert.
+ */
+export function useUnreadNotificationCount(tenantId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.notifications.unreadCount(tenantId ?? 'none'),
+    queryFn: async (): Promise<number> => {
+      const { count, error } = await supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId as string)
+        .is('read_at', null);
+
+      if (error) throw error;
+      return count ?? 0;
+    },
+    enabled: tenantId !== null,
+    staleTime: 30_000,
+    // Alerts are the one thing worth chasing without a user action: a table
+    // whose time is up needs somebody to notice while it still matters.
+    refetchInterval: 60_000,
+  });
+}
+
 export function useMarkNotificationRead(tenantId: string | null) {
   const queryClient = useQueryClient();
 
@@ -51,7 +82,10 @@ export function useMarkNotificationRead(tenantId: string | null) {
     },
     onSuccess: async () => {
       if (!tenantId) return;
-      await queryClient.invalidateQueries({ queryKey: queryKeys.notifications.inbox(tenantId) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.notifications.inbox(tenantId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount(tenantId) }),
+      ]);
     },
   });
 }

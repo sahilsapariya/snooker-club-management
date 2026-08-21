@@ -27,6 +27,9 @@ Postgres 17 on Supabase. Every schema change is a migration in
 | `0016_platform_administration` | owner directory, club creation, ownership assignment             |
 | `0017_club_operations`         | staff roster, membership status guards, the audit-trail helper   |
 | `0018_platform_read_scope`     | the `platform_*` reads answer only to the platform               |
+| `0019_notification_events`     | triggers that raise every alert, with the right audience         |
+| `0020_push_queue`              | the delivery queue and its service-role-only readers             |
+| `0021_scheduled_events`        | the time-up sweep and the unreconciled-till reminder             |
 
 RLS is enabled in the table-creation migrations and the policies arrive in
 `0009`. Between the two, the tables deny everything — the safe direction to fail.

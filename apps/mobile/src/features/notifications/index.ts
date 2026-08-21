@@ -16,6 +16,7 @@ export {
 } from './notification-service';
 export {
   useNotificationInbox,
+  useUnreadNotificationCount,
   useMarkNotificationRead,
   usePushRegistration,
   type NotificationRow,

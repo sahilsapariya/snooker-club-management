@@ -314,9 +314,12 @@ midnight does not see its late sessions land on the wrong day.
 
 ## Deliberate omissions
 
-- **Push delivery.** Tokens are captured and stored; sending needs a
-  server-side worker holding an Expo access token (see
-  [notifications.md](notifications.md)) and a development build.
+- **The Expo receipt pass.** `push-dispatch` reads delivery _tickets_, which
+  catches the tokens Expo rejects outright. `DeviceNotRegistered` usually
+  arrives in the later _receipt_, and polling for those needs somewhere to keep
+  ticket ids between the send and the poll. Until it exists, some dead tokens
+  stay active and are sent to harmlessly. See
+  [notifications.md](notifications.md).
 - **Equipment screens.** The schema and RLS exist; no UI yet.
 - **Creating login accounts.** Making a Supabase Auth user needs the service
   role, which never reaches the app. Accounts are created in the dashboard or

@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LoadingState, Screen } from '@/components/ui';
 import { ActiveClubBar, useAppSession } from '@/features/auth';
-import { usePushRegistration } from '@/features/notifications';
+import { usePushRegistration, useUnreadNotificationCount } from '@/features/notifications';
 import { useTheme } from '@/theme';
 
 /**
@@ -33,6 +33,9 @@ export default function TenantLayout() {
   const tenantId = session.status === 'tenant-user' ? session.tenant.id : null;
 
   usePushRegistration(userId, tenantId);
+  // Read here rather than in the Alerts screen: the badge has to be right on
+  // every screen, and the screen it points at is the one place it is not needed.
+  const unread = useUnreadNotificationCount(tenantId);
 
   if (session.status === 'loading') {
     return (
@@ -93,6 +96,12 @@ export default function TenantLayout() {
             options={{
               title: 'Alerts',
               tabBarIcon: ({ color, size }) => <Bell color={color} size={size} />,
+              // Capped rather than truncated: past a certain point the exact
+              // number stops being information and starts being a reason to
+              // give up on the tab entirely.
+              ...(unread.data && unread.data > 0
+                ? { tabBarBadge: unread.data > 99 ? '99+' : unread.data }
+                : {}),
             }}
           />
           <Tabs.Screen

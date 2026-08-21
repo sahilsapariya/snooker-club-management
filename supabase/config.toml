@@ -377,7 +377,7 @@ authorization_url_path = "/oauth/consent"
 allow_dynamic_registration = false
 
 [edge_runtime]
-enabled = false
+enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
 # `per_worker` (default) — enables hot reload during local development.
 # `oneshot` — fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
@@ -417,3 +417,13 @@ enabled = true
 # declarative_schema_path = "./schemas"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# ---------------------------------------------------------------------------
+# Edge functions
+# ---------------------------------------------------------------------------
+# push-dispatch holds the service role and the Expo access token, so it must
+# never be callable by a signed-in club user. `verify_jwt` requires a valid
+# token, and the scheduler that calls it uses the service role key.
+[functions.push-dispatch]
+enabled = true
+verify_jwt = true

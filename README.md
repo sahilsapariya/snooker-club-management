@@ -71,25 +71,25 @@ See [section 9](#9-how-tenant-isolation-works) and
 
 ### What works today
 
-| Area                                                  | State                                                          |
-| ----------------------------------------------------- | -------------------------------------------------------------- |
-| Sign in, roles, club resolution, theming              | done                                                           |
-| Tables floor view with live occupancy                 | done                                                           |
-| Session lifecycle: start, time-up, close, cancel      | done                                                           |
-| Configurable billing engine                           | done                                                           |
-| Food and drink on a bill, with stock ledger           | done                                                           |
-| Payments: full, partial, discount, waive              | done                                                           |
-| Expenses and cash-drawer reconciliation               | done                                                           |
-| Reports: revenue, tables, products, expenses, debts   | done                                                           |
-| Owner configuration of products and pricing           | done                                                           |
-| Multi-club ownership: selection, switching, isolation | done                                                           |
-| Owner configuration of tables and staff               | done                                                           |
-| Owner configuration of billing rules                  | done                                                           |
-| Per-club audit trail                                  | done                                                           |
-| Platform admin: owners, clubs, create, brand, assign  | done                                                           |
-| Push notification delivery                            | not built (see [docs/notifications.md](docs/notifications.md)) |
-| Equipment screens                                     | not built                                                      |
-| Creating login accounts from inside the app           | not built, by design — needs the service role                  |
+| Area                                                  | State                                                     |
+| ----------------------------------------------------- | --------------------------------------------------------- |
+| Sign in, roles, club resolution, theming              | done                                                      |
+| Tables floor view with live occupancy                 | done                                                      |
+| Session lifecycle: start, time-up, close, cancel      | done                                                      |
+| Configurable billing engine                           | done                                                      |
+| Food and drink on a bill, with stock ledger           | done                                                      |
+| Payments: full, partial, discount, waive              | done                                                      |
+| Expenses and cash-drawer reconciliation               | done                                                      |
+| Reports: revenue, tables, products, expenses, debts   | done                                                      |
+| Owner configuration of products and pricing           | done                                                      |
+| Multi-club ownership: selection, switching, isolation | done                                                      |
+| Owner configuration of tables and staff               | done                                                      |
+| Owner configuration of billing rules                  | done                                                      |
+| Per-club audit trail                                  | done                                                      |
+| Platform admin: owners, clubs, create, brand, assign  | done                                                      |
+| Notification events, inbox and push delivery          | done (see [docs/notifications.md](docs/notifications.md)) |
+| Equipment screens                                     | not built                                                 |
+| Creating login accounts from inside the app           | not built, by design — needs the service role             |
 
 Two business rules the whole design protects:
 
@@ -176,6 +176,8 @@ what makes that useless.
 │
 ├── supabase/
 │   ├── migrations/             ordered, reproducible schema
+│   ├── functions/              Edge Functions — the trusted server side
+│   │   └── push-dispatch/      Expo push delivery (service role only)
 │   ├── tests/                  pgTAP: RLS, roles, business rules
 │   ├── seed.sql                development fixtures
 │   └── config.toml
@@ -542,9 +544,9 @@ branding" a property of the privilege system rather than of one policy being
 written correctly.
 
 Route guards are UX, not security. All of the above is verified by
-`pnpm db:test` — 212 assertions covering cross-tenant reads, cross-tenant
+`pnpm db:test` — 251 assertions covering cross-tenant reads, cross-tenant
 writes, role escalation, disabled accounts, suspended tenants, multi-club
-ownership and privilege shape. See [docs/security.md](docs/security.md).
+ownership, notification audiences and privilege shape. See [docs/security.md](docs/security.md).
 
 ---
 
@@ -751,13 +753,13 @@ up in `pnpm typecheck`.
 ```bash
 pnpm test        # Jest: 194 assertions — theme contrast, money, durations, secure
                  # storage, errors, session states, club resolution, cache isolation
-pnpm db:test     # pgTAP: 212 assertions — isolation, roles, business rules,
-                 # multi-club ownership, platform administration
+pnpm db:test     # pgTAP: 251 assertions — isolation, roles, business rules,
+                 # multi-club ownership, platform administration, notifications
 ```
 
 The database suite is the important one. It runs as the `authenticated` Postgres
 role, because running as `postgres` would prove nothing — that role has
-`BYPASSRLS`. Five files:
+`BYPASSRLS`. Six files:
 
 | File                                  | Covers                                                                |
 | ------------------------------------- | --------------------------------------------------------------------- |
@@ -766,6 +768,7 @@ role, because running as `postgres` would prove nothing — that role has
 | `03_business_rules.test.sql`          | actual vs billable duration, price snapshots, the stock ledger        |
 | `04_multi_club.test.sql`              | one owner across many clubs; a receptionist pinned to one; suspension |
 | `05_platform_administration.test.sql` | platform-only reads, club creation, staffing guards, the audit trail  |
+| `06_notifications.test.sql`           | which events fire, who they reach, and what the push queue hands over |
 
 ---
 
