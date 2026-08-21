@@ -83,6 +83,7 @@ The feature list, as of the multi-club restructure:
 | `billing`       | the pure charge engine, and the club's billing settings   |
 | `pricing`       | per-table-type rate rules                                 |
 | `products`      | catalogue and stock                                       |
+| `payments`      | money in: the ledger, debts, and settling one             |
 | `expenses`      | money out, with correction                                |
 | `cash`          | the daily till and its history                            |
 | `reports`       | aggregates over a range                                   |
@@ -349,8 +350,8 @@ Everything used occasionally is routable but hidden from the bar (`href: null`
 in `(tenant)/_layout.tsx`) and reached from **More**:
 
 ```
-reports · manage · settings · expenses
-tables-setup · staff · billing · activity      (owner only)
+reports · manage · settings · expenses · debts
+tables-setup · staff · billing · activity        (owner only)
 ```
 
 The tabs are the four things a receptionist touches during a shift. Owner-only

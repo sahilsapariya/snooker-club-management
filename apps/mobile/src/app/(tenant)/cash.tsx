@@ -207,7 +207,7 @@ export default function CashScreen() {
               <>
                 <Divider />
                 <Line
-                  label="Still owed by customers"
+                  label="Still owed on today's bills"
                   amountMinor={Number(today?.outstanding_minor ?? 0)}
                   currency={currency}
                   tone="error"
@@ -215,6 +215,17 @@ export default function CashScreen() {
               </>
             ) : null}
           </Card>
+          {/* Deliberately below the takings and not part of them: money owed is
+              not money in the drawer, and the reconciliation must not read as
+              though it were. */}
+          <Text
+            variant="caption"
+            color="textMuted"
+            onPress={() => router.push('/(tenant)/debts')}
+            style={{ marginTop: theme.spacing.sm }}
+          >
+            See everything owed to the club, and take payment on it →
+          </Text>
         </View>
 
         {/* ---- Expenses ------------------------------------------------ */}

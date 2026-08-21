@@ -936,6 +936,71 @@ export type Database = {
           },
         ]
       }
+      session_payments: {
+        Row: {
+          amount_minor: number
+          business_date: string
+          created_at: string
+          id: string
+          method: Database["public"]["Enums"]["payment_method"]
+          note: string | null
+          received_by: string | null
+          session_id: string
+          tenant_id: string
+        }
+        Insert: {
+          amount_minor: number
+          business_date?: string
+          created_at?: string
+          id?: string
+          method: Database["public"]["Enums"]["payment_method"]
+          note?: string | null
+          received_by?: string | null
+          session_id: string
+          tenant_id: string
+        }
+        Update: {
+          amount_minor?: number
+          business_date?: string
+          created_at?: string
+          id?: string
+          method?: Database["public"]["Enums"]["payment_method"]
+          note?: string | null
+          received_by?: string | null
+          session_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_payments_received_by_fkey"
+            columns: ["received_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_payments_session_same_tenant"
+            columns: ["tenant_id", "session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["tenant_id", "id"]
+          },
+          {
+            foreignKeyName: "session_payments_session_same_tenant"
+            columns: ["tenant_id", "session_id"]
+            isOneToOne: false
+            referencedRelation: "v_outstanding_sessions"
+            referencedColumns: ["tenant_id", "id"]
+          },
+          {
+            foreignKeyName: "session_payments_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sessions: {
         Row: {
           actual_duration_seconds: number | null
@@ -1454,6 +1519,54 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "tenant_memberships"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      close_session: {
+        Args: {
+          p_billable_seconds: number
+          p_discount_minor?: number
+          p_frames_played?: number
+          p_notes?: string
+          p_payment_amount_minor?: number
+          p_payment_method?: Database["public"]["Enums"]["payment_method"]
+          p_session_id: string
+          p_table_charge_minor: number
+        }
+        Returns: {
+          actual_duration_seconds: number | null
+          billable_duration_seconds: number | null
+          business_date: string
+          created_at: string
+          customer_name: string | null
+          discount_minor: number
+          ended_at: string | null
+          ended_by: string | null
+          frames_played: number
+          id: string
+          items_total_minor: number
+          notes: string | null
+          paid_amount_minor: number
+          paid_at: string | null
+          payment_method: Database["public"]["Enums"]["payment_method"] | null
+          payment_status: Database["public"]["Enums"]["payment_status"]
+          planned_duration_minutes: number | null
+          pricing_rule_id: string | null
+          pricing_snapshot: Json
+          started_at: string
+          started_by: string | null
+          status: Database["public"]["Enums"]["session_status"]
+          table_charge_minor: number
+          table_id: string
+          tenant_id: string
+          time_completed_at: string | null
+          total_amount_minor: number | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "sessions"
           isOneToOne: true
           isSetofReturn: false
         }

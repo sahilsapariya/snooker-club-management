@@ -7,29 +7,32 @@ Postgres 17 on Supabase. Every schema change is a migration in
 
 ## Migration order
 
-| File                           | Contains                                                         |
-| ------------------------------ | ---------------------------------------------------------------- |
-| `0001_foundation`              | `app` schema, enums, shared immutable helpers                    |
-| `0002_identity_and_tenants`    | profiles, platform_admins, tenants, tenant_memberships           |
-| `0003_authorization`           | the SECURITY DEFINER helpers every policy is written in terms of |
-| `0004_club_configuration`      | billing settings, table types, club tables, pricing rules        |
-| `0005_catalog_and_inventory`   | product categories, products, inventory ledger, equipment        |
-| `0006_operations`              | sessions, session items, expenses, cash closings                 |
-| `0007_notifications_and_audit` | notifications, push tokens, activity log                         |
-| `0008_views`                   | read models (`security_invoker`)                                 |
-| `0009_rls_policies`            | every policy, in one reviewable file                             |
-| `0010_provisioning`            | auth triggers, tenant defaults, platform RPCs                    |
-| `0011_grants`                  | privilege lockdown                                               |
-| `0012_session_business_date`   | the trading day is derived by the server, never supplied         |
-| `0013_daily_cash_summary`      | the till's expected-vs-counted read model                        |
-| `0014_reports`                 | revenue, table, product and expense aggregates                   |
-| `0015_multi_club_ownership`    | one owner, many clubs; club config moves to the owner alone      |
-| `0016_platform_administration` | owner directory, club creation, ownership assignment             |
-| `0017_club_operations`         | staff roster, membership status guards, the audit-trail helper   |
-| `0018_platform_read_scope`     | the `platform_*` reads answer only to the platform               |
-| `0019_notification_events`     | triggers that raise every alert, with the right audience         |
-| `0020_push_queue`              | the delivery queue and its service-role-only readers             |
-| `0021_scheduled_events`        | the time-up sweep and the unreconciled-till reminder             |
+| File                            | Contains                                                         |
+| ------------------------------- | ---------------------------------------------------------------- |
+| `0001_foundation`               | `app` schema, enums, shared immutable helpers                    |
+| `0002_identity_and_tenants`     | profiles, platform_admins, tenants, tenant_memberships           |
+| `0003_authorization`            | the SECURITY DEFINER helpers every policy is written in terms of |
+| `0004_club_configuration`       | billing settings, table types, club tables, pricing rules        |
+| `0005_catalog_and_inventory`    | product categories, products, inventory ledger, equipment        |
+| `0006_operations`               | sessions, session items, expenses, cash closings                 |
+| `0007_notifications_and_audit`  | notifications, push tokens, activity log                         |
+| `0008_views`                    | read models (`security_invoker`)                                 |
+| `0009_rls_policies`             | every policy, in one reviewable file                             |
+| `0010_provisioning`             | auth triggers, tenant defaults, platform RPCs                    |
+| `0011_grants`                   | privilege lockdown                                               |
+| `0012_session_business_date`    | the trading day is derived by the server, never supplied         |
+| `0013_daily_cash_summary`       | the till's expected-vs-counted read model                        |
+| `0014_reports`                  | revenue, table, product and expense aggregates                   |
+| `0015_multi_club_ownership`     | one owner, many clubs; club config moves to the owner alone      |
+| `0016_platform_administration`  | owner directory, club creation, ownership assignment             |
+| `0017_club_operations`          | staff roster, membership status guards, the audit-trail helper   |
+| `0018_platform_read_scope`      | the `platform_*` reads answer only to the platform               |
+| `0019_notification_events`      | triggers that raise every alert, with the right audience         |
+| `0020_push_queue`               | the delivery queue and its service-role-only readers             |
+| `0021_scheduled_events`         | the time-up sweep and the unreconciled-till reminder             |
+| `0022_session_payments`         | payments become rows; the session's totals follow them           |
+| `0023_money_follows_the_ledger` | the till counts by the day money arrived, not the day of trade   |
+| `0024_close_session`            | closing and its first payment, in one transaction                |
 
 RLS is enabled in the table-creation migrations and the policies arrive in
 `0009`. Between the two, the tables deny everything — the safe direction to fail.
@@ -270,6 +273,54 @@ another club and asserts it returns nothing.
 
 Ranges are over the tenant-local **business date**, never a timestamp range, so
 a club trading past midnight does not scatter its late sessions across two days.
+
+## Payments are rows
+
+A session used to carry one amount and one method. That is enough for a bill
+paid once, in full, on the day it closed - which is the only case the columns
+were ever shaped for. Two things break otherwise, and both are silent:
+
+- **A split payment loses a method.** ₹150 cash and ₹150 by UPI became ₹300 by
+  whichever came last.
+- **A debt settled later lands in the wrong till.** `daily_cash_summary` read
+  the _session's_ business date, so cash handed over on Friday for a Tuesday
+  bill was counted into Tuesday. Friday's drawer would come up over by that
+  amount, Tuesday's retrospectively short, and nothing in the schema would
+  explain either. Nobody reports that as a bug; they conclude the app cannot
+  count.
+
+So `public.session_payments` holds one row per payment, with **its own**
+`business_date` - the day the money arrived.
+
+`sessions.paid_amount_minor`, `payment_status`, `payment_method` and `paid_at`
+all still exist and every reader of them still works. What changed is that
+nothing writes them any more: a trigger recomputes all four from the ledger, so
+there is no code path that can add a payment without the total moving, or move
+the total without a payment to explain it.
+
+Three rules the table enforces itself:
+
+| Rule                                                                  | Why                                                                                                                                                    |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `business_date` and `created_at` are always set from the server clock | A client that could pick either could post into a till already counted and signed off                                                                  |
+| A payment may not exceed what is owed                                 | If a customer hands over more, that is change. Otherwise a fat-fingered amount creates a negative balance no screen can show                           |
+| No `UPDATE`, ever                                                     | A payment is a fact about money that changed hands. The correction is to remove the wrong one and record the right one, which leaves both in the trail |
+
+`WAIVED` is deliberately left alone by the sync trigger. It is a decision - "we
+are not chasing this" - not an arithmetic outcome, and recomputing it from a
+zero balance would quietly turn a waiver back into a debt.
+
+### Two questions, two answers
+
+The money functions look inconsistent until you notice they answer different
+questions, so each one now says which:
+
+| Function                 | Attributes by                  | Because                                                      |
+| ------------------------ | ------------------------------ | ------------------------------------------------------------ |
+| `daily_cash_summary`     | the day the **money arrived**  | The drawer holds what came in today                          |
+| `report_revenue_summary` | the day the **trade happened** | Tuesday earned what Tuesday billed, whenever it is collected |
+
+---
 
 ## Migration 0012: the business date belongs to the server
 

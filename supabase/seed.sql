@@ -310,6 +310,114 @@ where s.tenant_id = 'aaaaaaaa-0000-4000-8000-000000000001'
   and s.status = 'ACTIVE';
 
 -- ---------------------------------------------------------------------------
+-- A few days of trade, so the money screens have something to show
+-- ---------------------------------------------------------------------------
+-- Without this, Cash, Reports and "Owed to the club" are all empty on a fresh
+-- install and the whole money side of the product is invisible until somebody
+-- hand-closes a session. Four shapes are seeded on purpose, because they
+-- exercise different code:
+--
+--   paid in full, cash          the ordinary case
+--   paid half cash, half UPI    only representable since the payments ledger
+--   part paid                   appears as a debt, still collectable
+--   never paid                  an older debt, to give the age badge something
+--
+insert into public.sessions (
+  tenant_id, table_id, pricing_rule_id, status, started_at, ended_at, started_by, ended_by,
+  planned_duration_minutes, billable_duration_seconds, table_charge_minor,
+  business_date, customer_name, pricing_snapshot
+)
+select
+  ct.tenant_id, ct.id, pr.id, 'CLOSED',
+  (now() - make_interval(days => v.days_ago, hours => 4)),
+  (now() - make_interval(days => v.days_ago, hours => 3)),
+  '33333333-3333-4333-8333-333333333333',
+  '33333333-3333-4333-8333-333333333333',
+  60, 3600, v.charge,
+  -- The club's own trading day, not the server's calendar date. Royal Snooker
+  -- runs on Asia/Kolkata, so at 19:00 UTC it is already tomorrow there - and a
+  -- fixture dated `current_date` would show up in the app as yesterday's trade.
+  (app.business_date(now(), t.timezone, t.business_day_cutoff) - v.days_ago),
+  v.customer,
+  '{}'::jsonb
+from (values
+  ('Pool 1',    0, 24000::bigint, 'Ravi'),
+  ('Pool 2',    0, 30000::bigint, 'Anita'),
+  ('Snooker 2', 1, 45000::bigint, 'Farhan'),
+  ('Pool Mini', 9, 18000::bigint, 'Deepa')
+) as v(table_name, days_ago, charge, customer)
+join public.club_tables ct
+  on ct.tenant_id = 'aaaaaaaa-0000-4000-8000-000000000001' and ct.name = v.table_name
+join public.tenants t on t.id = ct.tenant_id
+join public.table_types tt on tt.id = ct.table_type_id
+join public.pricing_rules pr
+  on pr.tenant_id = ct.tenant_id and pr.table_type_id = tt.id and pr.is_default;
+
+-- Payments are dated to when the money arrived, which for a fixture means
+-- back-dating them alongside their session. The trigger that normally forces
+-- the server's own clock is stood down for exactly this insert - a seed is a
+-- fixture, not a client, and it is the one caller allowed to say when.
+alter table public.session_payments disable trigger session_payments_before_write;
+
+insert into public.session_payments
+  (tenant_id, session_id, amount_minor, method, business_date, received_by, created_at)
+select s.tenant_id, s.id, v.amount, v.method::public.payment_method, s.business_date,
+       '33333333-3333-4333-8333-333333333333', s.ended_at
+from (values
+  -- Ravi paid in full, in cash.
+  ('Ravi',   24000::bigint, 'CASH'),
+  -- Anita split it: part cash, part UPI. One column could not have said this.
+  ('Anita',  15000::bigint, 'CASH'),
+  ('Anita',  15000::bigint, 'UPI'),
+  -- Farhan put down a deposit and still owes the rest.
+  ('Farhan', 20000::bigint, 'CASH')
+  -- Deepa paid nothing, nine days ago.
+) as v(customer, amount, method)
+join public.sessions s
+  on s.tenant_id = 'aaaaaaaa-0000-4000-8000-000000000001'
+ and s.customer_name = v.customer
+ and s.status = 'CLOSED';
+
+alter table public.session_payments enable trigger session_payments_before_write;
+
+-- The sync trigger stayed enabled throughout, so every session's
+-- payment_status, paid_amount_minor and paid_at are already correct - derived
+-- from the rows above rather than asserted alongside them.
+
+-- Blue Cue gets one settled session, so cross-club money reads have something
+-- on the other side to prove they are not seeing.
+insert into public.sessions (
+  tenant_id, table_id, pricing_rule_id, status, started_at, ended_at, started_by, ended_by,
+  planned_duration_minutes, billable_duration_seconds, table_charge_minor,
+  business_date, customer_name, pricing_snapshot
+)
+select ct.tenant_id, ct.id, pr.id, 'CLOSED',
+       now() - interval '5 hours', now() - interval '4 hours',
+       '55555555-5555-4555-8555-555555555555', '55555555-5555-4555-8555-555555555555',
+       60, 3600, 36000,
+       app.business_date(now(), t.timezone, t.business_day_cutoff),
+       'Blue Cue regular', '{}'::jsonb
+from public.club_tables ct
+join public.tenants t on t.id = ct.tenant_id
+join public.table_types tt on tt.id = ct.table_type_id
+join public.pricing_rules pr
+  on pr.tenant_id = ct.tenant_id and pr.table_type_id = tt.id and pr.is_default
+where ct.tenant_id = 'bbbbbbbb-0000-4000-8000-000000000002'
+order by ct.name
+limit 1;
+
+alter table public.session_payments disable trigger session_payments_before_write;
+
+insert into public.session_payments
+  (tenant_id, session_id, amount_minor, method, business_date, received_by, created_at)
+select s.tenant_id, s.id, s.total_amount_minor, 'CARD', s.business_date,
+       '55555555-5555-4555-8555-555555555555', s.ended_at
+from public.sessions s
+where s.tenant_id = 'bbbbbbbb-0000-4000-8000-000000000002' and s.status = 'CLOSED';
+
+alter table public.session_payments enable trigger session_payments_before_write;
+
+-- ---------------------------------------------------------------------------
 -- Notifications
 -- ---------------------------------------------------------------------------
 -- Nothing is seeded by hand. Since migration 0019 the triggers raise these

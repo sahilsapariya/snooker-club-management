@@ -3,6 +3,7 @@ import {
   BarChart3,
   Building2,
   Calculator,
+  HandCoins,
   History,
   LogOut,
   Receipt,
@@ -103,6 +104,15 @@ export default function MoreScreen() {
             icon={BarChart3}
             showChevron
             onPress={() => router.push('/(tenant)/reports')}
+          />
+          <Divider />
+          <ListItem
+            title="Owed to the club"
+            subtitle="Bills left unpaid, and taking payment on them"
+            icon={HandCoins}
+            showChevron
+            onPress={() => router.push('/(tenant)/debts')}
+            testID="more-debts"
           />
           <Divider />
           <ListItem

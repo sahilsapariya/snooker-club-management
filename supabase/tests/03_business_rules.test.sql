@@ -19,6 +19,18 @@ create or replace function pg_temp.royal_table(p_name text) returns uuid languag
    where tenant_id = 'aaaaaaaa-0000-4000-8000-000000000001'::uuid and name = p_name
 $fn$;
 
+-- The seed contains a few days of real trade now, so "the session on Pool 2" is
+-- no longer a unique row. Every session this file creates leaves customer_name
+-- null and every seeded one sets it, which is what tells them apart - and is
+-- more robust than "the most recent", which two inserts in the same transaction
+-- would tie on anyway.
+create or replace function pg_temp.test_session(p_table text) returns uuid language sql stable as $fn$
+  select s.id
+    from public.sessions s
+   where s.table_id = pg_temp.royal_table(p_table)
+     and s.customer_name is null
+$fn$;
+
 -- ---------------------------------------------------------------------------
 -- Actual duration is a recorded fact, never a billing output
 -- ---------------------------------------------------------------------------
@@ -35,17 +47,17 @@ values (
 
 select is(
   (select actual_duration_seconds from public.sessions
-    where table_id = pg_temp.royal_table('Pool 2')),
+    where id = pg_temp.test_session('Pool 2')),
   4020, 'the full 67 minutes actually played is recorded');
 
 select is(
   (select billable_duration_seconds from public.sessions
-    where table_id = pg_temp.royal_table('Pool 2')),
+    where id = pg_temp.test_session('Pool 2')),
   3600, 'the billed duration is the configured 60 minutes');
 
 select isnt(
-  (select actual_duration_seconds from public.sessions where table_id = pg_temp.royal_table('Pool 2')),
-  (select billable_duration_seconds from public.sessions where table_id = pg_temp.royal_table('Pool 2')),
+  (select actual_duration_seconds from public.sessions where id = pg_temp.test_session('Pool 2')),
+  (select billable_duration_seconds from public.sessions where id = pg_temp.test_session('Pool 2')),
   'the two are independent values, and here they differ');
 
 select throws_ok(
@@ -92,13 +104,13 @@ values ('aaaaaaaa-0000-4000-8000-000000000001', pg_temp.royal_table('Snooker 2')
 
 update public.sessions
    set status = 'TIME_COMPLETED', time_completed_at = now()
- where table_id = pg_temp.royal_table('Snooker 2');
+ where id = pg_temp.test_session('Snooker 2');
 
 select is(
-  (select ended_at from public.sessions where table_id = pg_temp.royal_table('Snooker 2')),
+  (select ended_at from public.sessions where id = pg_temp.test_session('Snooker 2')),
   null, 'reaching the booked time does not end the session');
 select is(
-  (select actual_duration_seconds from public.sessions where table_id = pg_temp.royal_table('Snooker 2')),
+  (select actual_duration_seconds from public.sessions where id = pg_temp.test_session('Snooker 2')),
   null, 'a still-running session has no actual duration yet');
 
 select throws_ok(
@@ -120,18 +132,18 @@ insert into public.session_items (tenant_id, session_id, product_id, quantity, p
 select 'aaaaaaaa-0000-4000-8000-000000000001', s.id, p.id, 3, '', null
 from public.sessions s
 join public.products p on p.tenant_id = s.tenant_id and p.name = 'Lemon Soda'
-where s.table_id = pg_temp.royal_table('Pool 1');
+where s.id = pg_temp.test_session('Pool 1');
 
 select is(
   (select unit_price_minor from public.session_items si
     join public.sessions s on s.id = si.session_id
-   where s.table_id = pg_temp.royal_table('Pool 1')),
+   where s.id = pg_temp.test_session('Pool 1')),
   3500::bigint, 'the sale price is snapshotted from the catalogue');
 
 select is(
   (select line_total_minor from public.session_items si
     join public.sessions s on s.id = si.session_id
-   where s.table_id = pg_temp.royal_table('Pool 1')),
+   where s.id = pg_temp.test_session('Pool 1')),
   10500::bigint, 'the line total is computed from the snapshot');
 
 -- Raise the catalogue price; yesterday's bill must not move.
@@ -141,7 +153,7 @@ update public.products set selling_price_minor = 9900
 select is(
   (select line_total_minor from public.session_items si
     join public.sessions s on s.id = si.session_id
-   where s.table_id = pg_temp.royal_table('Pool 1')),
+   where s.id = pg_temp.test_session('Pool 1')),
   10500::bigint, 'raising the catalogue price does not rewrite the existing bill');
 
 select throws_ok(
@@ -150,7 +162,7 @@ select throws_ok(
   'the price snapshot on a sold line is immutable');
 
 select is(
-  (select total_amount_minor from public.sessions where table_id = pg_temp.royal_table('Pool 1')),
+  (select total_amount_minor from public.sessions where id = pg_temp.test_session('Pool 1')),
   10500::bigint, 'the session total rolls up from its items');
 
 -- ---------------------------------------------------------------------------
@@ -169,7 +181,7 @@ select is(
 
 delete from public.session_items si
  using public.sessions s
- where si.session_id = s.id and s.table_id = pg_temp.royal_table('Pool 1');
+ where si.session_id = s.id and s.id = pg_temp.test_session('Pool 1');
 
 select is(
   (select stock_quantity from public.products
@@ -184,7 +196,7 @@ select is(
 
 -- Items may only be attached to an open session.
 update public.sessions set status = 'CLOSED', ended_at = now()
- where table_id = pg_temp.royal_table('Pool 1');
+ where id = pg_temp.test_session('Pool 1');
 
 select throws_ok(
   $$insert into public.session_items (tenant_id, session_id, product_id, quantity, product_name_snapshot, unit_price_minor)
@@ -336,25 +348,25 @@ select 'aaaaaaaa-0000-4000-8000-000000000001', pg_temp.royal_table('Pool Mini'),
        date '1999-01-01';   -- deliberately wrong; the trigger must overwrite it
 
 select isnt(
-  (select business_date from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  (select business_date from public.sessions where id = pg_temp.test_session('Pool Mini')),
   date '1999-01-01',
   'a client cannot forge the business date - the trigger derives it');
 
 select is(
-  (select status::text from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  (select status::text from public.sessions where id = pg_temp.test_session('Pool Mini')),
   'ACTIVE', 'a started session is open');
 
 -- The booked time elapses. This is a state change, not an ending.
 update public.sessions
    set status = 'TIME_COMPLETED', time_completed_at = now()
- where table_id = pg_temp.royal_table('Pool Mini');
+ where id = pg_temp.test_session('Pool Mini');
 
 select is(
-  (select ended_at from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  (select ended_at from public.sessions where id = pg_temp.test_session('Pool Mini')),
   null, 'flagging the booked time does not end the session');
 
 select is(
-  (select actual_duration_seconds from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  (select actual_duration_seconds from public.sessions where id = pg_temp.test_session('Pool Mini')),
   null, 'and no actual duration exists while it is still running');
 
 -- A drink is sold against it.
@@ -363,10 +375,10 @@ insert into public.session_items (tenant_id, session_id, product_id, quantity, a
 select s.tenant_id, s.id, p.id, 2, '33333333-3333-4333-8333-333333333333', '', null
 from public.sessions s
 join public.products p on p.tenant_id = s.tenant_id and p.name = 'Potato Chips'
-where s.table_id = pg_temp.royal_table('Pool Mini');
+where s.id = pg_temp.test_session('Pool Mini');
 
 select is(
-  (select items_total_minor from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  (select items_total_minor from public.sessions where id = pg_temp.test_session('Pool Mini')),
   5000::bigint, 'selling a drink rolls onto the session total');
 
 -- Close and take payment. The client sends billable time and the table charge;
@@ -381,18 +393,18 @@ update public.sessions
        payment_method = 'CASH',
        paid_amount_minor = 41000,
        paid_at = now()
- where table_id = pg_temp.royal_table('Pool Mini');
+ where id = pg_temp.test_session('Pool Mini');
 
 select is(
-  (select actual_duration_seconds from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  (select actual_duration_seconds from public.sessions where id = pg_temp.test_session('Pool Mini')),
   4020, 'the database records all 67 minutes actually played');
 
 select is(
-  (select billable_duration_seconds from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  (select billable_duration_seconds from public.sessions where id = pg_temp.test_session('Pool Mini')),
   3600, 'while the club billed the 60 minutes it decided to');
 
 select is(
-  (select total_amount_minor from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  (select total_amount_minor from public.sessions where id = pg_temp.test_session('Pool Mini')),
   41000::bigint, 'the grand total is generated from the table charge plus items');
 
 -- Reopening is refused outright rather than silently matching nothing: the

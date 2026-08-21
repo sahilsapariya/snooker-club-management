@@ -78,7 +78,7 @@ See [section 9](#9-how-tenant-isolation-works) and
 | Session lifecycle: start, time-up, close, cancel      | done                                                      |
 | Configurable billing engine                           | done                                                      |
 | Food and drink on a bill, with stock ledger           | done                                                      |
-| Payments: full, partial, discount, waive              | done                                                      |
+| Payments: full, partial, split method, settled later  | done                                                      |
 | Expenses and cash-drawer reconciliation               | done                                                      |
 | Reports: revenue, tables, products, expenses, debts   | done                                                      |
 | Owner configuration of products and pricing           | done                                                      |
@@ -93,6 +93,10 @@ See [section 9](#9-how-tenant-isolation-works) and
 
 Two business rules the whole design protects:
 
+- **Money is recorded where it actually moved.** A payment is a row with its
+  own date, so a debt settled on Friday lands in Friday's drawer even though the
+  session was played on Tuesday — and a bill split between cash and UPI keeps
+  both. See [docs/database.md](docs/database.md#payments-are-rows).
 - **Recorded time and billed time are different numbers.** A 60-minute booking
   played for 67 minutes stores 4020 seconds of actual duration, whatever the
   club chooses to charge. `sessions.actual_duration_seconds` is a generated
@@ -544,9 +548,9 @@ branding" a property of the privilege system rather than of one policy being
 written correctly.
 
 Route guards are UX, not security. All of the above is verified by
-`pnpm db:test` — 251 assertions covering cross-tenant reads, cross-tenant
+`pnpm db:test` — 280 assertions covering cross-tenant reads, cross-tenant
 writes, role escalation, disabled accounts, suspended tenants, multi-club
-ownership, notification audiences and privilege shape. See [docs/security.md](docs/security.md).
+ownership, notification audiences, payment attribution and privilege shape. See [docs/security.md](docs/security.md).
 
 ---
 
@@ -758,13 +762,14 @@ to debug.
 ```bash
 pnpm test        # Jest: 194 assertions — theme contrast, money, durations, secure
                  # storage, errors, session states, club resolution, cache isolation
-pnpm db:test     # pgTAP: 251 assertions — isolation, roles, business rules,
-                 # multi-club ownership, platform administration, notifications
+pnpm db:test     # pgTAP: 280 assertions — isolation, roles, business rules,
+                 # multi-club ownership, platform administration, notifications,
+                 # the payments ledger
 ```
 
 The database suite is the important one. It runs as the `authenticated` Postgres
 role, because running as `postgres` would prove nothing — that role has
-`BYPASSRLS`. Six files:
+`BYPASSRLS`. Seven files:
 
 | File                                  | Covers                                                                |
 | ------------------------------------- | --------------------------------------------------------------------- |
@@ -774,6 +779,7 @@ role, because running as `postgres` would prove nothing — that role has
 | `04_multi_club.test.sql`              | one owner across many clubs; a receptionist pinned to one; suspension |
 | `05_platform_administration.test.sql` | platform-only reads, club creation, staffing guards, the audit trail  |
 | `06_notifications.test.sql`           | which events fire, who they reach, and what the push queue hands over |
+| `07_payments.test.sql`                | split payments, debts settled later, and which till the cash lands in |
 
 ---
 
