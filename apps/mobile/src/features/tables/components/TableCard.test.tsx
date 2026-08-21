@@ -38,8 +38,8 @@ const occupied = (overrides: Partial<ClubTableOverview> = {}): ClubTableOverview
 });
 
 describe('TableCard', () => {
-  it('shows a free table as available', async () => {
-    const { getByText } = await renderWithProviders(<TableCard table={baseTable} currency={INR} />);
+  it('shows a free table as available', () => {
+    const { getByText } = renderWithProviders(<TableCard table={baseTable} currency={INR} />);
 
     expect(getByText('Snooker 1')).toBeTruthy();
     expect(getByText('Snooker · No. 1')).toBeTruthy();
@@ -47,8 +47,8 @@ describe('TableCard', () => {
     expect(getByText('Free now')).toBeTruthy();
   });
 
-  it('shows an occupied table with its elapsed clock and running total', async () => {
-    const { getByText, getByLabelText } = await renderWithProviders(
+  it('shows an occupied table with its elapsed clock and running total', () => {
+    const { getByText, getByLabelText } = renderWithProviders(
       <TableCard table={occupied()} currency={INR} />,
     );
 
@@ -64,13 +64,13 @@ describe('TableCard', () => {
    * termination. The card says "Time up" and the clock keeps running past the
    * booked hour.
    */
-  it('keeps the clock running past the booked time and flags it', async () => {
+  it('keeps the clock running past the booked time and flags it', () => {
     const table = occupied({
       active_session_status: 'TIME_COMPLETED',
       active_session_started_at: new Date(Date.now() - 67 * 60_000).toISOString(),
     });
 
-    const { getByText, getByLabelText, queryByText } = await renderWithProviders(
+    const { getByText, getByLabelText, queryByText } = renderWithProviders(
       <TableCard table={table} currency={INR} />,
     );
 
@@ -80,16 +80,16 @@ describe('TableCard', () => {
     expect(queryByText('Free now')).toBeNull();
   });
 
-  it('marks a deactivated table and dims it', async () => {
-    const { getByText } = await renderWithProviders(
+  it('marks a deactivated table and dims it', () => {
+    const { getByText } = renderWithProviders(
       <TableCard table={{ ...baseTable, is_active: false }} currency={INR} />,
     );
 
     expect(getByText('Inactive')).toBeTruthy();
   });
 
-  it('surfaces the reason a table is out of play', async () => {
-    const { getByText } = await renderWithProviders(
+  it('surfaces the reason a table is out of play', () => {
+    const { getByText } = renderWithProviders(
       <TableCard
         table={{ ...baseTable, status: 'MAINTENANCE', notes: 'Cloth being replaced' }}
         currency={INR}
@@ -100,8 +100,8 @@ describe('TableCard', () => {
     expect(getByText('Cloth being replaced')).toBeTruthy();
   });
 
-  it('formats money in the club that is actually being rendered', async () => {
-    const { getByText } = await renderWithProviders(
+  it('formats money in the club that is actually being rendered', () => {
+    const { getByText } = renderWithProviders(
       <TableCard table={occupied({ active_session_total_minor: 125050 })} currency={INR} />,
     );
     expect(getByText('₹1,250.50')).toBeTruthy();
@@ -111,7 +111,7 @@ describe('TableCard', () => {
    * The same component, with no changes, under a completely different brand.
    * If a colour literal ever creeps into TableCard, this is what catches it.
    */
-  it('renders identically under a different club brand', async () => {
+  it('renders identically under a different club brand', () => {
     const burgundy: Branding = {
       primaryColor: '#9f1239',
       secondaryColor: '#6d1029',
@@ -119,12 +119,9 @@ describe('TableCard', () => {
       clubName: 'Burgundy Club',
     };
 
-    const { getByText } = await renderWithProviders(
-      <TableCard table={baseTable} currency={INR} />,
-      {
-        branding: burgundy,
-      },
-    );
+    const { getByText } = renderWithProviders(<TableCard table={baseTable} currency={INR} />, {
+      branding: burgundy,
+    });
 
     expect(getByText('Snooker 1')).toBeTruthy();
     expect(getByText('Available')).toBeTruthy();

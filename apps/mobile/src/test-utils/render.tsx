@@ -17,14 +17,7 @@ export interface RenderWithProvidersOptions extends Omit<RenderOptions, 'wrapper
   readonly scheme?: ColorScheme;
 }
 
-/**
- * Note: `render` is asynchronous in React Native Testing Library 14 (React 19
- * renders concurrently), so callers must await this.
- */
-export async function renderWithProviders(
-  ui: ReactElement,
-  options: RenderWithProvidersOptions = {},
-) {
+export function renderWithProviders(ui: ReactElement, options: RenderWithProvidersOptions = {}) {
   const { branding, scheme, ...renderOptions } = options;
 
   const queryClient = new QueryClient({
@@ -52,6 +45,5 @@ export async function renderWithProviders(
     );
   }
 
-  const result = await render(ui, { wrapper: Wrapper, ...renderOptions });
-  return { ...result, queryClient };
+  return { ...render(ui, { wrapper: Wrapper, ...renderOptions }), queryClient };
 }

@@ -24,8 +24,8 @@ describe('LoginForm', () => {
     mockState = { isPending: false, error: null };
   });
 
-  it('renders the credential fields and the submit button', async () => {
-    const { getByTestId, getByText } = await renderWithProviders(<LoginForm />);
+  it('renders the credential fields and the submit button', () => {
+    const { getByTestId, getByText } = renderWithProviders(<LoginForm />);
 
     expect(getByTestId('login-email')).toBeTruthy();
     expect(getByTestId('login-password')).toBeTruthy();
@@ -35,9 +35,9 @@ describe('LoginForm', () => {
   });
 
   it('refuses to submit an empty form and says why', async () => {
-    const { getByTestId, findByText } = await renderWithProviders(<LoginForm />);
+    const { getByTestId, findByText } = renderWithProviders(<LoginForm />);
 
-    await fireEvent.press(getByTestId('login-submit'));
+    fireEvent.press(getByTestId('login-submit'));
 
     expect(await findByText('Enter your email address')).toBeTruthy();
     expect(await findByText('Enter your password')).toBeTruthy();
@@ -45,22 +45,22 @@ describe('LoginForm', () => {
   });
 
   it('rejects a malformed email before making a request', async () => {
-    const { getByTestId, findByText } = await renderWithProviders(<LoginForm />);
+    const { getByTestId, findByText } = renderWithProviders(<LoginForm />);
 
-    await fireEvent.changeText(getByTestId('login-email'), 'not-an-email');
-    await fireEvent.changeText(getByTestId('login-password'), 'DevPassword123');
-    await fireEvent.press(getByTestId('login-submit'));
+    fireEvent.changeText(getByTestId('login-email'), 'not-an-email');
+    fireEvent.changeText(getByTestId('login-password'), 'DevPassword123');
+    fireEvent.press(getByTestId('login-submit'));
 
     expect(await findByText('That does not look like an email address')).toBeTruthy();
     expect(mockMutate).not.toHaveBeenCalled();
   });
 
   it('submits valid credentials', async () => {
-    const { getByTestId } = await renderWithProviders(<LoginForm />);
+    const { getByTestId } = renderWithProviders(<LoginForm />);
 
-    await fireEvent.changeText(getByTestId('login-email'), 'reception@royalsnooker.dev');
-    await fireEvent.changeText(getByTestId('login-password'), 'DevPassword123');
-    await fireEvent.press(getByTestId('login-submit'));
+    fireEvent.changeText(getByTestId('login-email'), 'reception@royalsnooker.dev');
+    fireEvent.changeText(getByTestId('login-password'), 'DevPassword123');
+    fireEvent.press(getByTestId('login-submit'));
 
     await waitFor(() => {
       expect(mockMutate).toHaveBeenCalledWith({
@@ -74,7 +74,7 @@ describe('LoginForm', () => {
    * The important half of error handling: what the user is shown is the mapped
    * message, never the technical one.
    */
-  it('shows the user-facing message and never the technical one', async () => {
+  it('shows the user-facing message and never the technical one', () => {
     mockState = {
       isPending: false,
       error: new AppError({
@@ -84,25 +84,25 @@ describe('LoginForm', () => {
       }),
     };
 
-    const { getByText, queryByText } = await renderWithProviders(<LoginForm />);
+    const { getByText, queryByText } = renderWithProviders(<LoginForm />);
 
     expect(getByText('That email or password is incorrect.')).toBeTruthy();
     expect(queryByText(/AuthApiError/)).toBeNull();
     expect(queryByText(/400/)).toBeNull();
   });
 
-  it('shows a notice when the previous session expired', async () => {
-    const { getByText } = await renderWithProviders(
+  it('shows a notice when the previous session expired', () => {
+    const { getByText } = renderWithProviders(
       <LoginForm notice="Your session expired. Please sign in again." />,
     );
 
     expect(getByText('Your session expired. Please sign in again.')).toBeTruthy();
   });
 
-  it('marks the submit button busy while signing in', async () => {
+  it('marks the submit button busy while signing in', () => {
     mockState = { isPending: true, error: null };
 
-    const { getByTestId } = await renderWithProviders(<LoginForm />);
+    const { getByTestId } = renderWithProviders(<LoginForm />);
 
     expect(getByTestId('login-submit').props.accessibilityState).toMatchObject({ busy: true });
   });

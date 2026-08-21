@@ -4,9 +4,9 @@
 
 | Concern      | Choice                         | Why                                                              |
 | ------------ | ------------------------------ | ---------------------------------------------------------------- |
-| Runtime      | Expo SDK 57, React Native 0.86 | CNG, EAS builds, OTA updates; no hand-maintained native projects |
-| Language     | TypeScript 6, strict           | plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`    |
-| Navigation   | Expo Router 57                 | file-based, typed routes, deep links for free                    |
+| Runtime      | Expo SDK 54, React Native 0.81 | CNG, EAS builds, OTA updates; no hand-maintained native projects |
+| Language     | TypeScript 5.9, strict         | plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`    |
+| Navigation   | Expo Router 6                  | file-based, typed routes, deep links for free                    |
 | Server state | TanStack Query 5               | caching, retry policy and invalidation in one place              |
 | Client state | Zustand 5                      | small, no boilerplate, no context re-render storms               |
 | Forms        | React Hook Form + Zod 4        | uncontrolled inputs, one schema for types and validation         |
@@ -19,9 +19,18 @@
 read from theme tokens rather than a vendor's palette — adopting a framework
 would mean fighting it on the one axis that matters most here.
 
-**Everything is Expo Go compatible.** That is a deliberate constraint on the
-dependency list: the app can be run on a phone in seconds without a native
-build. React Native's own `KeyboardAvoidingView` is used rather than
+**The SDK is pinned to what Expo Go supports.** SDK 54 is not the newest
+release - it is the newest one the Expo Go build available on the team's
+devices can run. Expo Go ships one client per SDK and only the latest is on
+the stores, so a phone that cannot update past Expo Go 54.x cannot open an
+SDK 55+ project at all. Bumping the SDK therefore has a hard prerequisite:
+either everyone can install the matching Expo Go, or the team moves to
+development builds (`eas build --profile development`), which are tied to your
+project rather than to a store app and remove the constraint entirely.
+
+**Everything else is Expo Go compatible too.** That is a deliberate constraint
+on the dependency list: the app can be run on a phone in seconds without a
+native build. React Native's own `KeyboardAvoidingView` is used rather than
 `react-native-keyboard-controller` for exactly this reason. Push notifications
 are the one feature that needs a development build.
 

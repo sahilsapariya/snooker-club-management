@@ -14,7 +14,7 @@ Security, not by application code.
 2. [Architecture](#2-architecture)
 3. [Repository layout](#3-repository-layout)
 4. [Prerequisites](#4-prerequisites)
-5. [Getting started](#5-getting-started)
+5. [Running it locally](#5-running-it-locally)
 6. [Environment variables](#6-environment-variables)
 7. [Commands](#7-commands)
 8. [How authentication works](#8-how-authentication-works)
@@ -138,32 +138,149 @@ current convention and keeps everything the app owns inside `src/`.
 
 ## 4. Prerequisites
 
-| Tool    | Version               | Notes                                |
-| ------- | --------------------- | ------------------------------------ |
-| Node.js | 24 LTS (see `.nvmrc`) | `nvm use` picks it up                |
-| pnpm    | 11+                   | `npm i -g pnpm`                      |
-| Docker  | running               | required by the local Supabase stack |
-| Expo Go | on a phone (optional) | fastest way to run the app           |
+| Tool        | Version               | Check with         | Notes                                  |
+| ----------- | --------------------- | ------------------ | -------------------------------------- |
+| **Node.js** | 24 LTS (see `.nvmrc`) | `node -v`          | Node 18 is EOL and **will not work**   |
+| **pnpm**    | 11+                   | `pnpm -v`          | `npm i -g pnpm`                        |
+| **Docker**  | running               | `docker ps`        | the local Supabase stack is containers |
+| Expo Go     | **54.x** — see below  | app version screen | must match the project's SDK exactly   |
 
 Android Studio / Xcode are only needed for native development builds, not for
 the day-to-day loop.
 
+> **Expo Go and the SDK must match exactly.** This project is on **Expo SDK 54**,
+> so you need **Expo Go 54.x** (since SDK 54, Expo Go's version number _is_ the
+> SDK number). Opening it in a newer or older Expo Go gives
+> _"Project is incompatible with this version of Expo Go"_.
+>
+> The stores only carry the newest Expo Go, and newer builds raise the minimum
+> Android version — so a phone that cannot update past 54.x will report "no
+> update available" and still be correct. That is why the SDK is pinned here
+> rather than kept on the latest release.
+>
+> Check yours: **Settings → Apps → Expo Go → version**, or the Expo Go profile
+> screen.
+>
+> To move off this constraint entirely, switch to a development build
+> (`eas build --profile development`) — it is tied to your project rather than
+> to a store app, and it is required for push notifications anyway.
+
+> **If `node -v` shows anything below 24**, your system Node is too old. This
+> repo pins the version in `.nvmrc`:
+>
+> ```bash
+> nvm install    # first time only - reads .nvmrc
+> nvm use        # in the repo root
+> ```
+>
+> **If that says `nvm: command not found`**, nvm is not loaded in your shell.
+> It is a shell _function_, not a program, so `npx nvm` cannot work either
+> (npm hosts a placeholder package that just points you at nvm.sh). A common
+> cause is having the nvm lines in `~/.bashrc` while using zsh, which never
+> reads that file. Fix it once:
+>
+> ```bash
+> cat >> ~/.zshrc <<'SETUP'
+> export NVM_DIR="$HOME/.nvm"
+> [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+> [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+> SETUP
+> exec zsh                 # reload the shell
+> nvm alias default 24     # so new terminals start on the right version
+> ```
+>
+> That last line matters: global npm packages such as pnpm are installed
+> **per Node version**, so a terminal that opens on a different version will
+> report `pnpm: command not found`.
+
 ---
 
-## 5. Getting started
+## 5. Running it locally
+
+### 5.1 One-time setup
 
 ```bash
-nvm use                 # Node 24
-pnpm install
+cd snooker-club-management
+nvm use                                          # Node 24
+pnpm install                                     # ~1 min
 
-pnpm supabase:start     # starts Postgres, Auth, PostgREST, Studio (Docker)
-pnpm db:reset           # applies every migration, then seeds development data
-
-cp apps/mobile/.env.example apps/mobile/.env   # if you do not have one yet
-pnpm dev                # Expo dev server
+cp apps/mobile/.env.example apps/mobile/.env     # public config, git-ignored
 ```
 
-Then sign in with one of the seeded accounts (password `DevPassword123`):
+Make sure Docker is actually running (`docker ps` should not error), then:
+
+```bash
+pnpm supabase:start
+```
+
+The first run downloads several GB of images and takes a few minutes. Later
+runs take seconds. On a fresh volume this also **applies every migration and
+runs `seed.sql` automatically**, so you have a working database with two clubs
+in it when it finishes.
+
+`pnpm supabase:status` prints the local URLs and keys at any time.
+
+### 5.2 Every day after that
+
+Two terminals, both from the repo root:
+
+```bash
+# terminal 1 - backend
+nvm use && pnpm supabase:start
+
+# terminal 2 - app
+nvm use && pnpm dev
+```
+
+Metro starts on **http://localhost:8081**. In that terminal press:
+
+| Key | Opens                                           |
+| --- | ----------------------------------------------- |
+| `w` | browser — **works immediately, no extra setup** |
+| `a` | Android emulator (needs Android Studio)         |
+| `i` | iOS simulator (macOS only)                      |
+| `r` | reload the app                                  |
+| `j` | open the debugger                               |
+
+Or scan the QR code with **Expo Go** on your phone.
+
+### 5.3 Point the app at the right address
+
+`EXPO_PUBLIC_SUPABASE_URL` in `apps/mobile/.env` has to be reachable **from
+wherever the app is running**, which is not always your laptop:
+
+| Running on             | `EXPO_PUBLIC_SUPABASE_URL`   | Why                                              |
+| ---------------------- | ---------------------------- | ------------------------------------------------ |
+| Browser (`w`)          | `http://127.0.0.1:54321`     | same machine                                     |
+| iOS simulator (`i`)    | `http://127.0.0.1:54321`     | shares the host network                          |
+| Android emulator (`a`) | `http://10.0.2.2:54321`      | `10.0.2.2` is the emulator's alias for your host |
+| **Physical phone**     | `http://<your-LAN-IP>:54321` | `127.0.0.1` on a phone means _the phone_         |
+
+Find your LAN IP:
+
+```bash
+# Linux
+ip -4 addr show scope global | grep -oP 'inet \K[\d.]+'
+# macOS
+ipconfig getifaddr en0
+```
+
+```bash
+# apps/mobile/.env  - example for a physical device
+EXPO_PUBLIC_SUPABASE_URL=http://192.168.1.20:54321
+```
+
+> **Restart Metro after editing `.env`.** Expo inlines `EXPO_PUBLIC_*` into the
+> bundle at build time; it is not read at runtime, so a live-reload will not
+> pick it up. Use `pnpm --filter @snooker/mobile start:clear` to also drop the
+> Metro cache.
+
+Phone and laptop must be on the same Wi-Fi, and your firewall must allow ports
+`8081` and `54321`.
+
+### 5.4 Sign in
+
+All seeded accounts use the password **`DevPassword123`**:
 
 | Email                        | Role                        |
 | ---------------------------- | --------------------------- |
@@ -174,14 +291,54 @@ Then sign in with one of the seeded accounts (password `DevPassword123`):
 | `reception@bluecue.dev`      | receptionist, Blue Cue      |
 
 Two clubs are seeded on purpose: tenant isolation is not observable with one.
+Sign in as the two receptionists side by side and you will see completely
+different data.
 
-> **Running on a physical device?** `127.0.0.1` in `.env` means the phone
-> itself. Replace it with your machine's LAN address, e.g.
-> `EXPO_PUBLIC_SUPABASE_URL=http://192.168.1.20:54321`.
+There is **no sign-up screen** — self-registration is disabled by design.
+Accounts are provisioned by the platform admin; see
+[docs/operations.md](docs/operations.md).
 
-> **Pointing at a hosted Supabase project instead?** It needs this schema:
-> `pnpm supabase link --project-ref <ref>` then `pnpm db:push`. Until you do,
-> the app will report that `public.tenants` does not exist.
+### 5.5 Stopping everything
+
+```bash
+# terminal 2: Ctrl+C   (stops Metro)
+pnpm supabase:stop     # stops the containers, keeps your data
+```
+
+`supabase:stop` backs the database up, so the next `supabase:start` restores
+exactly where you left off. To throw the data away and start clean instead:
+
+```bash
+pnpm db:reset          # re-runs every migration + seed.sql
+```
+
+### 5.6 When something goes wrong
+
+| Symptom                                                 | Cause and fix                                                                                                                                                                                                                 |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Project is incompatible with this version of Expo Go`  | Your Expo Go major version must equal the project's SDK (currently **54**). Check **Settings → Apps → Expo Go → version**. If your phone cannot install Expo Go 54.x, use a development build instead.                        |
+| `nvm: command not found`                                | nvm is not loaded in this shell. It is a shell function, so `npx nvm` cannot work. See the note in [§4](#4-prerequisites).                                                                                                    |
+| `This version of pnpm requires at least Node.js v22.13` | You are on the system Node, not the nvm one. Run `nvm use` in the repo root. If that also fails, see the row above.                                                                                                           |
+| `pnpm: command not found` after `nvm use`               | Global packages are installed per Node version. Either `npm i -g pnpm` on the version you switched to, or `nvm alias default 24`.                                                                                             |
+| `Could not find the table 'public.tenants'`             | Migrations are not applied to whatever `.env` points at. Local: `pnpm db:reset`. Hosted: `pnpm supabase link --project-ref <ref> && pnpm db:push`.                                                                            |
+| `permission denied for table …` for `anon`              | **Expected** — you are not signed in. `anon` has zero privileges by design.                                                                                                                                                   |
+| `Network request failed` on a phone                     | `.env` still says `127.0.0.1`. See [5.3](#53-point-the-app-at-the-right-address).                                                                                                                                             |
+| `Email logins are disabled`                             | `[auth.email] enable_signup` in `supabase/config.toml` got set to `false`. Despite the name it disables the email _provider_, not just signup. It must stay `true`; self-signup is blocked by `enable_signup` under `[auth]`. |
+| `Invalid app configuration` at startup                  | `apps/mobile/.env` is missing or incomplete. Copy `.env.example` and restart Metro.                                                                                                                                           |
+| `Error: listen EADDRINUSE :::8081`                      | An old Metro is still running: `pkill -f "expo start"`.                                                                                                                                                                       |
+| `React Native DevTools … chrome-sandbox` error on Linux | Harmless. An optional debugging tool cannot start; the app is unaffected.                                                                                                                                                     |
+| Stale or bizarre bundling errors                        | `pnpm --filter @snooker/mobile start:clear`                                                                                                                                                                                   |
+| Docker errors from `supabase:start`                     | Docker is not running, or a previous stack is stuck: `pnpm supabase:stop` then start again.                                                                                                                                   |
+
+### 5.7 Useful local URLs
+
+| What                            | URL                                                       |
+| ------------------------------- | --------------------------------------------------------- |
+| Metro / app                     | http://localhost:8081                                     |
+| Supabase API                    | http://127.0.0.1:54321                                    |
+| Supabase Studio (browse the DB) | http://127.0.0.1:54323                                    |
+| Mail catcher (password resets)  | http://127.0.0.1:54324                                    |
+| Postgres                        | `postgresql://postgres:postgres@127.0.0.1:54322/postgres` |
 
 ---
 
