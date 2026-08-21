@@ -954,7 +954,7 @@ export type Database = {
         Insert: {
           actual_duration_seconds?: number | null
           billable_duration_seconds?: number | null
-          business_date: string
+          business_date?: string
           created_at?: string
           customer_name?: string | null
           discount_minor?: number

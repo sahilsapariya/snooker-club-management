@@ -3,6 +3,7 @@ import { render, type RenderOptions } from '@testing-library/react-native';
 import type { ReactElement, ReactNode } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { ToastProvider } from '@/components/ui';
 import { ThemeProvider, type Branding, type ColorScheme } from '@/theme';
 
 /**
@@ -38,7 +39,7 @@ export function renderWithProviders(ui: ReactElement, options: RenderWithProvide
       >
         <QueryClientProvider client={queryClient}>
           <ThemeProvider branding={branding ?? null} {...(scheme === undefined ? {} : { scheme })}>
-            {children}
+            <ToastProvider>{children}</ToastProvider>
           </ThemeProvider>
         </QueryClientProvider>
       </SafeAreaProvider>

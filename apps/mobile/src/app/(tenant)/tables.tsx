@@ -1,38 +1,71 @@
 import { LayoutGrid } from 'lucide-react-native';
-import { useCallback } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 
 import { Avatar, Badge, EmptyState, ErrorState, LoadingState, Screen, Text } from '@/components/ui';
 import { useAppSession } from '@/features/auth';
+import {
+  SessionSheet,
+  StartSessionSheet,
+  useOpenSessions,
+  useTimeCompletedWatcher,
+  type SessionWithContext,
+} from '@/features/sessions';
 import { TableCard, useClubTables, type ClubTableOverview } from '@/features/tables';
 import type { CurrencyConfig } from '@/lib/format';
 import { useTheme } from '@/theme';
 
 /**
- * The Tables screen: real rows, from Supabase, filtered by Row Level Security.
+ * The floor view, and the entry point to everything operational.
  *
- * This is the screen that proves the whole stack end to end - sign in, resolve
- * the club, theme from its branding, and read data that the database has
- * already scoped to that club.
+ * Tapping a free table starts a session; tapping an occupied one opens it. The
+ * table list and the open-session list are separate queries because occupancy
+ * is derived, not stored - a session ending is what frees a table, so both are
+ * invalidated together after every mutation.
  */
 export default function TablesScreen() {
   const theme = useTheme();
   const session = useAppSession();
 
   const tenant = session.status === 'tenant-user' ? session.tenant : null;
-  const { data, isPending, isError, error, refetch, isRefetching, summary } = useClubTables(
-    tenant?.id ?? null,
+  const tenantId = tenant?.id ?? null;
+
+  const { data, isPending, isError, error, refetch, isRefetching, summary } =
+    useClubTables(tenantId);
+  const openSessions = useOpenSessions(tenantId);
+
+  // Flags sessions whose booked time has elapsed. Never ends them.
+  useTimeCompletedWatcher(tenantId, openSessions.data);
+
+  const [startTable, setStartTable] = useState<ClubTableOverview | null>(null);
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null);
+
+  const currency: CurrencyConfig = useMemo(
+    () => ({
+      code: tenant?.currency_code ?? 'INR',
+      minorUnits: tenant?.currency_minor_units ?? 2,
+    }),
+    [tenant?.currency_code, tenant?.currency_minor_units],
   );
 
-  const currency: CurrencyConfig = {
-    code: tenant?.currency_code ?? 'INR',
-    minorUnits: tenant?.currency_minor_units ?? 2,
-  };
+  const activeSession: SessionWithContext | null = useMemo(
+    () => (openSessions.data ?? []).find((s) => s.id === openSessionId) ?? null,
+    [openSessions.data, openSessionId],
+  );
+
+  const handleTablePress = useCallback((table: ClubTableOverview) => {
+    if (table.is_occupied === true && table.active_session_id) {
+      setOpenSessionId(table.active_session_id);
+    } else if (table.is_active === true) {
+      setStartTable(table);
+    }
+  }, []);
 
   const renderItem = useCallback(
-    ({ item }: { item: ClubTableOverview }) => <TableCard table={item} currency={currency} />,
-    // `currency` is derived from the tenant row, which changes only on re-theme.
-    [currency.code, currency.minorUnits], // eslint-disable-line react-hooks/exhaustive-deps
+    ({ item }: { item: ClubTableOverview }) => (
+      <TableCard table={item} currency={currency} onPress={() => handleTablePress(item)} />
+    ),
+    [currency, handleTablePress],
   );
 
   if (session.status !== 'tenant-user') {
@@ -94,7 +127,10 @@ export default function TablesScreen() {
           refreshControl={
             <RefreshControl
               refreshing={isRefetching}
-              onRefresh={() => void refetch()}
+              onRefresh={() => {
+                void refetch();
+                void openSessions.refetch();
+              }}
               tintColor={theme.colors.primary}
             />
           }
@@ -111,6 +147,25 @@ export default function TablesScreen() {
           }
         />
       )}
+
+      <StartSessionSheet
+        visible={startTable !== null}
+        onClose={() => setStartTable(null)}
+        table={startTable}
+        tenantId={session.tenant.id}
+        userId={session.profile.id}
+        currency={currency}
+      />
+
+      <SessionSheet
+        visible={activeSession !== null}
+        onClose={() => setOpenSessionId(null)}
+        session={activeSession}
+        tenantId={session.tenant.id}
+        userId={session.profile.id}
+        currency={currency}
+        billingSettings={session.billingSettings}
+      />
     </Screen>
   );
 }

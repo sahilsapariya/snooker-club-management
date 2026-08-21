@@ -3,6 +3,7 @@ import { useEffect, useMemo, type ReactNode } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { ToastProvider } from '@/components/ui';
 import { useAppSession, useAuthListener } from '@/features/auth';
 import { createQueryClient } from '@/lib/query';
 import { startSupabaseAutoRefresh } from '@/lib/supabase';
@@ -47,7 +48,9 @@ function ThemedApp({ children }: { readonly children: ReactNode }) {
   return (
     <ThemeProvider branding={branding}>
       <StatusBar style="auto" />
-      {children}
+      {/* Inside the theme because toasts read semantic colour tokens, and
+          above the router so any screen can raise one. */}
+      <ToastProvider>{children}</ToastProvider>
     </ThemeProvider>
   );
 }

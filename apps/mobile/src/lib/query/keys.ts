@@ -16,8 +16,19 @@ export const queryKeys = {
 
   sessions: {
     open: (tenantId: string) => ['tenant', tenantId, 'sessions', 'open'] as const,
+    recent: (tenantId: string) => ['tenant', tenantId, 'sessions', 'recent'] as const,
     byId: (tenantId: string, sessionId: string) =>
       ['tenant', tenantId, 'sessions', sessionId] as const,
+  },
+
+  products: {
+    all: (tenantId: string) => ['tenant', tenantId, 'products'] as const,
+    categories: (tenantId: string) => ['tenant', tenantId, 'product-categories'] as const,
+    lowStock: (tenantId: string) => ['tenant', tenantId, 'products', 'low-stock'] as const,
+  },
+
+  pricing: {
+    rules: (tenantId: string) => ['tenant', tenantId, 'pricing-rules'] as const,
   },
 
   notifications: {

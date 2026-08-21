@@ -56,7 +56,7 @@ export function SectionHeader({ title, subtitle, action }: SectionHeaderProps) {
 export interface MoneyValueProps {
   readonly amountMinor: number;
   readonly currency?: CurrencyConfig;
-  readonly variant?: 'body' | 'titleMd' | 'titleLg' | 'displayMd';
+  readonly variant?: 'bodySm' | 'body' | 'titleSm' | 'titleMd' | 'titleLg' | 'displayMd';
   readonly tone?: 'textPrimary' | 'textSecondary' | 'success' | 'error' | 'primaryOnSurface';
 }
 

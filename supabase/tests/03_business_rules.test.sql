@@ -10,7 +10,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 \ir _helpers.psql
-select plan(39);
+select plan(48);
 
 select pg_temp.act_as_system();
 
@@ -319,6 +319,89 @@ select throws_ok(
     values ('aaaaaaaa-0000-4000-8000-000000000001', 'lemon soda', 4000)$$,
   '23505', null,
   'but one club cannot have the same product name twice');
+
+-- ---------------------------------------------------------------------------
+-- The full session lifecycle, as the app now drives it
+-- ---------------------------------------------------------------------------
+-- These mirror what features/sessions does over PostgREST: start, flag the
+-- booked time, sell a drink, close and take payment. Each step is asserted
+-- against the constraints rather than against the client's good intentions.
+
+-- Start: no end time, ACTIVE, business date derived server-side.
+insert into public.sessions (tenant_id, table_id, status, started_by, planned_duration_minutes,
+                             pricing_snapshot, business_date)
+select 'aaaaaaaa-0000-4000-8000-000000000001', pg_temp.royal_table('Pool Mini'), 'ACTIVE',
+       '33333333-3333-4333-8333-333333333333', 60,
+       jsonb_build_object('pricing_mode', 'PER_HOUR', 'rate_minor', 36000),
+       date '1999-01-01';   -- deliberately wrong; the trigger must overwrite it
+
+select isnt(
+  (select business_date from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  date '1999-01-01',
+  'a client cannot forge the business date - the trigger derives it');
+
+select is(
+  (select status::text from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  'ACTIVE', 'a started session is open');
+
+-- The booked time elapses. This is a state change, not an ending.
+update public.sessions
+   set status = 'TIME_COMPLETED', time_completed_at = now()
+ where table_id = pg_temp.royal_table('Pool Mini');
+
+select is(
+  (select ended_at from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  null, 'flagging the booked time does not end the session');
+
+select is(
+  (select actual_duration_seconds from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  null, 'and no actual duration exists while it is still running');
+
+-- A drink is sold against it.
+insert into public.session_items (tenant_id, session_id, product_id, quantity, added_by,
+                                  product_name_snapshot, unit_price_minor)
+select s.tenant_id, s.id, p.id, 2, '33333333-3333-4333-8333-333333333333', '', null
+from public.sessions s
+join public.products p on p.tenant_id = s.tenant_id and p.name = 'Potato Chips'
+where s.table_id = pg_temp.royal_table('Pool Mini');
+
+select is(
+  (select items_total_minor from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  5000::bigint, 'selling a drink rolls onto the session total');
+
+-- Close and take payment. The client sends billable time and the table charge;
+-- actual duration and the grand total are computed by Postgres.
+update public.sessions
+   set status = 'CLOSED',
+       ended_at = started_at + interval '67 minutes',
+       ended_by = '33333333-3333-4333-8333-333333333333',
+       billable_duration_seconds = 3600,
+       table_charge_minor = 36000,
+       payment_status = 'PAID',
+       payment_method = 'CASH',
+       paid_amount_minor = 41000,
+       paid_at = now()
+ where table_id = pg_temp.royal_table('Pool Mini');
+
+select is(
+  (select actual_duration_seconds from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  4020, 'the database records all 67 minutes actually played');
+
+select is(
+  (select billable_duration_seconds from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  3600, 'while the club billed the 60 minutes it decided to');
+
+select is(
+  (select total_amount_minor from public.sessions where table_id = pg_temp.royal_table('Pool Mini')),
+  41000::bigint, 'the grand total is generated from the table charge plus items');
+
+-- Reopening is refused outright rather than silently matching nothing: the
+-- immutability guard fires before the terminal-state constraint is even reached.
+select throws_ok(
+  $$update public.sessions set status = 'ACTIVE', ended_at = null
+     where table_id = (select id from public.club_tables where name = 'Pool Mini')$$,
+  '23514', null,
+  'a closed session cannot be reopened - its end time is immutable');
 
 select * from finish();
 rollback;
