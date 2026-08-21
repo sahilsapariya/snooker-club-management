@@ -37,6 +37,8 @@ import {
   useCancelSession,
   useCloseSession,
   useRemoveSessionItem,
+  useUpdateSessionFrames,
+  useUpdateSessionItem,
 } from '../hooks/use-sessions';
 
 type PaymentMethod = Database['public']['Enums']['payment_method'];
@@ -81,6 +83,8 @@ export function SessionSheet({
   const { data: products } = useProducts(visible ? tenantId : null);
   const addItem = useAddSessionItem(tenantId);
   const removeItem = useRemoveSessionItem(tenantId, session?.id ?? null);
+  const updateItem = useUpdateSessionItem(tenantId, session?.id ?? null);
+  const updateFrames = useUpdateSessionFrames(tenantId, session?.id ?? null);
   const closeSession = useCloseSession(tenantId);
   const cancelSession = useCancelSession(tenantId);
 
@@ -119,6 +123,12 @@ export function SessionSheet({
 
   const tableChargeMinor = charge?.tableChargeMinor ?? 0;
 
+  // Two independent reasons a club counts frames: the club bills frames on top
+  // of time, or this table's own rule prices by the frame instead of by time.
+  const snapshotRule = pricingRuleFromSnapshot(session.pricing_snapshot);
+  const framesMatter =
+    billingSettings?.frame_billing_enabled === true || snapshotRule?.pricing_mode === 'PER_FRAME';
+
   // `tenderedMinor === null` means the receptionist has not touched the amount,
   // which is the overwhelmingly common "paid in full" case. Defaulting to the
   // payable amount keeps that a single tap while still allowing a part payment.
@@ -146,6 +156,7 @@ export function SessionSheet({
         sessionId: session.id,
         endedBy: userId,
         charge,
+        framesPlayed: session.frames_played,
         discountMinor: settlement.discountMinor,
         payment: {
           status: settlement.paymentStatus,
@@ -248,6 +259,48 @@ export function SessionSheet({
           ) : null}
         </View>
 
+        {/* ---- Frames ---------------------------------------------------
+            Only for clubs that price frames. The count is written straight to
+            the session, so the bill above recomputes from the same number the
+            close will persist - there is no separate "preview" value that could
+            disagree with what is charged. */}
+        {framesMatter ? (
+          <View>
+            <SectionHeader
+              title="Frames"
+              subtitle="Recorded as they are played, and priced into the bill above"
+            />
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: theme.spacing.md,
+                backgroundColor: theme.colors.surfaceSunken,
+                borderRadius: theme.radius.lg,
+                padding: theme.spacing.md,
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text variant="titleMd">{session.frames_played}</Text>
+                <Text variant="caption" color="textMuted">
+                  {session.frames_played === 1 ? 'frame played' : 'frames played'}
+                </Text>
+              </View>
+              <QuantityStepper
+                value={session.frames_played}
+                min={0}
+                max={99}
+                label="frames played"
+                onChange={(next) =>
+                  updateFrames.mutate(next, {
+                    onError: (error) => toast.error(error, 'Could not record that frame.'),
+                  })
+                }
+              />
+            </View>
+          </View>
+        ) : null}
+
         {/* ---- The bill ------------------------------------------------ */}
         <View>
           <SectionHeader title="Bill" subtitle="Recalculated live from the recorded start time" />
@@ -323,6 +376,31 @@ export function SessionSheet({
                     style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}
                   >
                     <MoneyValue amountMinor={item.line_total_minor ?? 0} currency={currency} />
+                    {/* Stepping below one removes the line rather than writing a
+                        zero quantity: `session_items` has a CHECK requiring a
+                        positive quantity, and "none of that" and "a zero-priced
+                        one of that" are not the same thing. */}
+                    <QuantityStepper
+                      value={Number(item.quantity)}
+                      min={0}
+                      max={99}
+                      label={item.product_name_snapshot}
+                      onChange={(next) => {
+                        if (next <= 0) {
+                          removeItem.mutate(item.id, {
+                            onError: (error) => toast.error(error, 'Could not remove that item.'),
+                          });
+                          return;
+                        }
+                        updateItem.mutate(
+                          { itemId: item.id, quantity: next },
+                          {
+                            onError: (error) =>
+                              toast.error(error, 'Could not change that quantity.'),
+                          },
+                        );
+                      }}
+                    />
                     <IconButton
                       icon={Trash2}
                       tone="danger"

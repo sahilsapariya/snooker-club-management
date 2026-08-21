@@ -17,12 +17,16 @@
 -- Development logins (all use the password `DevPassword123`):
 --
 --   admin@snookerplatform.dev     platform super admin (no club)
---   owner@royalsnooker.dev        OWNER        of Royal Snooker Club
+--   owner@royalsnooker.dev        OWNER        of Royal Snooker Club AND Cue
+--                                              Lounge - the multi-club case
 --   reception@royalsnooker.dev    RECEPTIONIST of Royal Snooker Club
 --   owner@bluecue.dev             OWNER        of Blue Cue Club
 --   reception@bluecue.dev         RECEPTIONIST of Blue Cue Club
 --
--- Two clubs exist on purpose: tenant isolation is not testable with one.
+-- Three clubs exist on purpose. Two are needed before tenant isolation is
+-- testable at all; the third gives one owner two clubs, which is what makes the
+-- club selector, the club switcher and per-club cache isolation exercisable
+-- without hand-building data first.
 -- ============================================================================
 
 begin;
@@ -100,7 +104,16 @@ values
   ('bbbbbbbb-0000-4000-8000-000000000002', 'blue-cue', 'Blue Cue Club', 'ACTIVE',
    '#2563EB', '#1E40AF', 'ocean', 'INR', 'Asia/Kolkata', '00:00',
    'Anita Rao', 'contact@bluecue.dev', '+91 91234 56780',
-   '44 Residency Road', 'Bengaluru', 'Karnataka', '560025')
+   '44 Residency Road', 'Bengaluru', 'Karnataka', '560025'),
+  -- Second club for the Royal owner. Its whole purpose is to make the
+  -- multi-club path real in development: the same login reaches two clubs, so
+  -- the selector, the switcher and per-club cache isolation are all exercised
+  -- without hand-building data first. Branded differently on purpose, so a
+  -- theme that fails to follow a club switch is obvious on sight.
+  ('cccccccc-0000-4000-8000-000000000003', 'cue-lounge', 'Cue Lounge', 'ACTIVE',
+   '#9F1239', '#6D1029', 'burgundy', 'INR', 'Asia/Kolkata', '02:00',
+   'Ravi Menon', 'contact@cuelounge.dev', '+91 98765 11223',
+   '7 Fort Road', 'Kochi', 'Kerala', '682001')
 on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -111,7 +124,10 @@ values
   ('aaaaaaaa-0000-4000-8000-000000000001', '22222222-2222-4222-8222-222222222222', 'OWNER',        'ACTIVE', now()),
   ('aaaaaaaa-0000-4000-8000-000000000001', '33333333-3333-4333-8333-333333333333', 'RECEPTIONIST', 'ACTIVE', now()),
   ('bbbbbbbb-0000-4000-8000-000000000002', '44444444-4444-4444-8444-444444444444', 'OWNER',        'ACTIVE', now()),
-  ('bbbbbbbb-0000-4000-8000-000000000002', '55555555-5555-4555-8555-555555555555', 'RECEPTIONIST', 'ACTIVE', now())
+  ('bbbbbbbb-0000-4000-8000-000000000002', '55555555-5555-4555-8555-555555555555', 'RECEPTIONIST', 'ACTIVE', now()),
+  -- One owner, two clubs, one login. Allowed since migration 0015 narrowed the
+  -- single-active-membership rule to receptionists.
+  ('cccccccc-0000-4000-8000-000000000003', '22222222-2222-4222-8222-222222222222', 'OWNER',        'ACTIVE', now())
 on conflict (tenant_id, user_id) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -142,6 +158,20 @@ update public.tenant_billing_settings
        frame_billing_enabled      = false
  where tenant_id = 'bbbbbbbb-0000-4000-8000-000000000002';
 
+update public.tenant_billing_settings
+   set time_calculation_mode      = 'PER_HOUR',
+       billing_increment_minutes  = 60,
+       minimum_billable_minutes   = 30,
+       rounding_mode              = 'ROUND_UP',
+       rounding_increment_minutes = 30,
+       grace_period_minutes       = 10,
+       overtime_mode              = 'INCREMENT_BLOCK',
+       overtime_rate_minor        = 20000,       -- Rs 200.00 per overtime block
+       overtime_increment_minutes = 30,
+       frame_billing_enabled      = true,
+       default_frame_price_minor  = 7500         -- Rs 75.00 per frame
+ where tenant_id = 'cccccccc-0000-4000-8000-000000000003';
+
 -- ---------------------------------------------------------------------------
 -- Tables
 -- ---------------------------------------------------------------------------
@@ -155,7 +185,9 @@ from (values
   ('aaaaaaaa-0000-4000-8000-000000000001'::uuid, 'POOL_SMALL',   'Pool Mini', 5, 'AVAILABLE',   false, 50, 'Retired from the floor'),
   ('bbbbbbbb-0000-4000-8000-000000000002'::uuid, 'SNOOKER',      'Snooker A', 1, 'AVAILABLE',   true,  10, null),
   ('bbbbbbbb-0000-4000-8000-000000000002'::uuid, 'POOL_REGULAR', 'Pool A',    2, 'AVAILABLE',   true,  20, null),
-  ('bbbbbbbb-0000-4000-8000-000000000002'::uuid, 'POOL_SMALL',   'Pool B',    3, 'AVAILABLE',   true,  30, null)
+  ('bbbbbbbb-0000-4000-8000-000000000002'::uuid, 'POOL_SMALL',   'Pool B',    3, 'AVAILABLE',   true,  30, null),
+  ('cccccccc-0000-4000-8000-000000000003'::uuid, 'SNOOKER',      'Lounge 1',  1, 'AVAILABLE',   true,  10, null),
+  ('cccccccc-0000-4000-8000-000000000003'::uuid, 'POOL_REGULAR', 'Lounge 2',  2, 'AVAILABLE',   true,  20, null)
 ) as v(tenant_id, type_code, name, number, status, is_active, sort_order, notes)
 join public.table_types t on t.tenant_id = v.tenant_id and t.code = v.type_code
 on conflict (tenant_id, name) do nothing;
@@ -173,7 +205,9 @@ from (values
   ('aaaaaaaa-0000-4000-8000-000000000001'::uuid, 'POOL_SMALL',   'Mini pool · hourly',    'PER_HOUR',        12000::bigint, null, 30, null::bigint),
   ('bbbbbbbb-0000-4000-8000-000000000002'::uuid, 'SNOOKER',      'Snooker · hourly',      'PER_HOUR',        36000::bigint, null, 15, null::bigint),
   ('bbbbbbbb-0000-4000-8000-000000000002'::uuid, 'POOL_REGULAR', 'Pool · hourly',         'PER_HOUR',        24000::bigint, null, 15, null::bigint),
-  ('bbbbbbbb-0000-4000-8000-000000000002'::uuid, 'POOL_SMALL',   'Mini pool · hourly',    'PER_HOUR',        18000::bigint, null, 15, null::bigint)
+  ('bbbbbbbb-0000-4000-8000-000000000002'::uuid, 'POOL_SMALL',   'Mini pool · hourly',    'PER_HOUR',        18000::bigint, null, 15, null::bigint),
+  ('cccccccc-0000-4000-8000-000000000003'::uuid, 'SNOOKER',      'Lounge snooker',        'PER_HOUR',        42000::bigint, null, 30, null::bigint),
+  ('cccccccc-0000-4000-8000-000000000003'::uuid, 'POOL_REGULAR', 'Lounge pool',           'PER_HOUR',        30000::bigint, null, 30, null::bigint)
 ) as v(tenant_id, type_code, name, mode, rate, increment, minimum, frame_price)
 join public.table_types t on t.tenant_id = v.tenant_id and t.code = v.type_code
 on conflict do nothing;

@@ -87,6 +87,14 @@ export async function getExpoPushToken(): Promise<PushRegistrationResult> {
  *
  * RLS restricts `device_push_tokens` to `user_id = auth.uid()`, so a device can
  * only ever register itself.
+ *
+ * `tenant_id` records the club the device was last used in, and is re-pointed
+ * on every club switch (the upsert conflicts on the token). It is a hint, not a
+ * routing key: an owner running three clubs carries one phone and must hear
+ * about all three, so the delivery worker should resolve recipients from the
+ * notification's tenant through `tenant_memberships`, then find their devices
+ * by `user_id`. Filtering devices by this column would silently stop delivering
+ * every club an owner is not currently looking at. See docs/notifications.md.
  */
 export async function registerDeviceToken(params: {
   readonly userId: string;

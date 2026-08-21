@@ -12,22 +12,28 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 \ir _helpers.psql
-select plan(41);
+select plan(42);
 
 -- ---------------------------------------------------------------------------
 -- Reads: a member sees their own club and nothing else
 -- ---------------------------------------------------------------------------
 select pg_temp.act_as(pg_temp.royal_owner());
 
-select is((select count(*)::int from public.tenants), 1,
-          'Royal owner sees exactly one tenant');
-select is((select id from public.tenants), pg_temp.royal(),
-          'and it is their own club');
+-- This owner runs two clubs (Royal Snooker and Cue Lounge), so "their own
+-- club" is a set, not a row. What isolation means for them is that the set
+-- contains their clubs and no others - not that it has one element.
+select is((select count(*)::int from public.tenants), 2,
+          'Royal owner sees exactly their two clubs');
+select set_eq(
+  $$select id from public.tenants$$,
+  $$values ('aaaaaaaa-0000-4000-8000-000000000001'::uuid),
+           ('cccccccc-0000-4000-8000-000000000003'::uuid)$$,
+  'and they are the two they own');
 select is((select count(*)::int from public.tenants where id = pg_temp.blue()), 0,
           'Royal owner cannot read the Blue Cue tenant row');
 
-select is((select count(*)::int from public.club_tables), 5,
-          'Royal owner sees only their own five tables');
+select is((select count(*)::int from public.club_tables where tenant_id = pg_temp.royal()), 5,
+          'Royal owner sees their first club''s five tables');
 select is((select count(*)::int from public.club_tables where tenant_id = pg_temp.blue()), 0,
           'Royal owner sees zero Blue Cue tables');
 select is((select count(*)::int from public.products where tenant_id = pg_temp.blue()), 0,
@@ -46,9 +52,13 @@ select is((select count(*)::int from public.tenant_billing_settings where tenant
           'Royal owner sees zero Blue Cue billing settings');
 
 -- Views must not become a side door. v_club_table_overview is declared
--- security_invoker, so the caller's RLS still applies.
-select is((select count(*)::int from public.v_club_table_overview), 5,
-          'the tables read model is filtered to the caller''s club');
+-- security_invoker, so the caller's RLS still applies - and for a multi-club
+-- owner that means both of their clubs and nothing beyond them.
+select is((select count(*)::int from public.v_club_table_overview
+            where tenant_id = pg_temp.royal()), 5,
+          'the tables read model is filtered to the caller''s clubs');
+select is((select count(distinct tenant_id)::int from public.v_club_table_overview), 2,
+          'and spans exactly the two clubs they own');
 select is((select count(*)::int from public.v_club_table_overview where tenant_id = pg_temp.blue()), 0,
           'the tables read model leaks no Blue Cue rows');
 select is((select count(*)::int from public.v_low_stock_products where tenant_id = pg_temp.blue()), 0,
@@ -205,7 +215,7 @@ select isnt(
 -- The platform operator sees across clubs
 -- ---------------------------------------------------------------------------
 select pg_temp.act_as(pg_temp.platform_admin());
-select is((select count(*)::int from public.tenants), 2,
+select is((select count(*)::int from public.tenants), 3,
           'the platform super admin sees every club');
 
 select * from finish();

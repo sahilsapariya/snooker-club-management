@@ -1,4 +1,5 @@
-import { Receipt, Wallet } from 'lucide-react-native';
+import { router } from 'expo-router';
+import { History, Receipt, Wallet } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 
@@ -7,6 +8,7 @@ import {
   Button,
   Card,
   Divider,
+  EmptyState,
   ErrorState,
   ListItem,
   LoadingState,
@@ -18,7 +20,13 @@ import {
   useToast,
 } from '@/components/ui';
 import { useAppSession } from '@/features/auth';
-import { useCashClosing, useCloseTill, useDailySummary, useOpenTill } from '@/features/cash';
+import {
+  useCashClosing,
+  useCloseTill,
+  useDailySummary,
+  useOpenTill,
+  useRecentClosings,
+} from '@/features/cash';
 import { RecordExpenseSheet, useExpenses } from '@/features/expenses';
 import { businessDateOf, formatDate, type CurrencyConfig, type TenantClock } from '@/lib/format';
 import { useTheme } from '@/theme';
@@ -62,6 +70,7 @@ export default function CashScreen() {
 
   const summary = useDailySummary(tenantId, businessDate);
   const closing = useCashClosing(tenantId, businessDate);
+  const history = useRecentClosings(tenantId);
   const expenses = useExpenses(tenantId);
   const openTill = useOpenTill(tenantId);
   const closeTill = useCloseTill(tenantId);
@@ -318,6 +327,72 @@ export default function CashScreen() {
                   />
                 </View>
               )}
+            </Card>
+          )}
+        </View>
+
+        {/* ---- Previous days --------------------------------------------
+            Reconciliation is only trustworthy if yesterday's is still there to
+            look at. Closings are never edited - a wrong count is corrected by a
+            note, not by rewriting the number - so this is a record, not a form. */}
+        <View>
+          <SectionHeader
+            title="Previous days"
+            subtitle="What the drawer held, and whether it agreed"
+            action={{ label: 'Expenses', onPress: () => router.push('/(tenant)/expenses') }}
+          />
+
+          {history.isPending ? <LoadingState label="Loading recent closings" /> : null}
+
+          {!history.isPending && (history.data ?? []).length === 0 ? (
+            <EmptyState
+              icon={History}
+              title="No closings yet"
+              description="Once a day's till is closed it stays here for reference."
+            />
+          ) : (
+            <Card style={{ gap: theme.spacing.xs }}>
+              {(history.data ?? [])
+                .filter((entry) => entry.business_date !== businessDate)
+                .map((entry, index) => {
+                  const difference = Number(entry.difference_minor ?? 0);
+                  return (
+                    <View key={entry.id}>
+                      {index > 0 ? <Divider /> : null}
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingVertical: theme.spacing.sm,
+                          gap: theme.spacing.sm,
+                        }}
+                      >
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text variant="bodySm">
+                            {formatDate(`${entry.business_date}T12:00:00Z`, clock)}
+                          </Text>
+                          <Text variant="caption" color="textMuted">
+                            {entry.status === 'CLOSED' ? 'Closed' : 'Still open'}
+                            {entry.notes ? ` · ${entry.notes}` : ''}
+                          </Text>
+                        </View>
+                        <MoneyValue
+                          amountMinor={Number(entry.actual_cash_minor ?? 0)}
+                          currency={currency}
+                          variant="bodySm"
+                        />
+                        {difference === 0 ? (
+                          <Badge label="Balanced" tone="success" />
+                        ) : (
+                          <Badge
+                            label={difference < 0 ? 'Short' : 'Over'}
+                            tone={difference < 0 ? 'error' : 'warning'}
+                          />
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
             </Card>
           )}
         </View>

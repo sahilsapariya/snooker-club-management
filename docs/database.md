@@ -20,9 +20,40 @@ Postgres 17 on Supabase. Every schema change is a migration in
 | `0009_rls_policies`            | every policy, in one reviewable file                             |
 | `0010_provisioning`            | auth triggers, tenant defaults, platform RPCs                    |
 | `0011_grants`                  | privilege lockdown                                               |
+| `0012_session_business_date`   | the trading day is derived by the server, never supplied         |
+| `0013_daily_cash_summary`      | the till's expected-vs-counted read model                        |
+| `0014_reports`                 | revenue, table, product and expense aggregates                   |
+| `0015_multi_club_ownership`    | one owner, many clubs; club config moves to the owner alone      |
+| `0016_platform_administration` | owner directory, club creation, ownership assignment             |
+| `0017_club_operations`         | staff roster, membership status guards, the audit-trail helper   |
+| `0018_platform_read_scope`     | the `platform_*` reads answer only to the platform               |
 
 RLS is enabled in the table-creation migrations and the policies arrive in
 `0009`. Between the two, the tables deny everything — the safe direction to fail.
+
+### What `0015` actually changed
+
+Almost nothing, and that is the point. `tenant_memberships` was always
+many-to-many and `app.tenant_ids()` always returned a set, so exactly one object
+stood between the schema and multi-club ownership:
+
+```sql
+-- before: nobody could hold two active memberships
+drop index tenant_memberships_single_active_per_user;
+
+-- after: the constraint applies to staff, not to owners
+create unique index tenant_memberships_single_active_club_for_staff
+  on public.tenant_memberships (user_id)
+  where status = 'ACTIVE' and role = 'RECEPTIONIST';
+```
+
+The second half of `0015` is a responsibility shift rather than a capability
+one: the write policies on `club_tables`, `table_types`, `pricing_rules`,
+`products`, `product_categories`, `equipment`, `expense_categories` and
+`tenant_billing_settings` moved from `app.can_manage_tenant` (owner _or_
+platform) to `app.is_tenant_owner` (owner only). Configuring a club is the
+club's business, not the platform's. `tenant_memberships` deliberately keeps
+`can_manage_tenant`, because the platform must be able to attach owners.
 
 ---
 
@@ -161,7 +192,18 @@ app; it is all in `pricing_rules` and `tenant_billing_settings`, and the two
 seeded clubs are configured differently on purpose to prove it.
 
 **`activity_logs.action` is free text.** New operational events should never
-require a type migration.
+require a type migration. Everything writes through `public.log_activity`, which
+is `SECURITY INVOKER` — so RLS decides whether the write is allowed, and the
+actor and their role are resolved from the session rather than accepted as
+arguments. It returns `void` on purpose: `activity_logs` is readable only by a
+club's owner, and `RETURNING` re-applies the `SELECT` policy, so echoing the row
+back would make the function fail for exactly the receptionists who generate
+most of the entries. The trail is deliberately write-only for the people being
+audited.
+
+**Ownership is a membership, not a table.** There is no `owners` table. An owner
+is a `tenant_memberships` row with `role = 'OWNER'`, which is why an owner
+running four clubs needs no special case anywhere — they hold four rows.
 
 Enums are used where the domain is genuinely closed (`session_status`,
 `payment_status`, `equipment_status`) and can still be extended with

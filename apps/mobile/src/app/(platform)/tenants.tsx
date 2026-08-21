@@ -1,110 +1,189 @@
-import { Link } from 'expo-router';
-import { Building2, LogOut } from 'lucide-react-native';
-import { FlatList, RefreshControl, View } from 'react-native';
+import { router } from 'expo-router';
+import { Building2, Plus, TriangleAlert } from 'lucide-react-native';
+import { useMemo, useState } from 'react';
+import { RefreshControl, ScrollView, View } from 'react-native';
 
 import {
   Badge,
   Button,
   Card,
+  Divider,
   EmptyState,
   ErrorState,
+  Input,
+  ListItem,
   LoadingState,
   Screen,
-  Text,
+  SectionHeader,
 } from '@/components/ui';
-import { useAppSession, useSignOut } from '@/features/auth';
-import { useTenants } from '@/features/platform/hooks/use-tenants';
-import type { TenantStatus } from '@/features/platform/api/tenants.api';
+import { usePlatformClubs, type PlatformClub } from '@/features/platform';
 import { useTheme } from '@/theme';
 
-const STATUS_TONE: Record<TenantStatus, 'success' | 'info' | 'warning' | 'neutral'> = {
+const STATUS_TONE: Record<string, 'success' | 'info' | 'warning' | 'neutral'> = {
   ACTIVE: 'success',
   TRIAL: 'info',
   SUSPENDED: 'warning',
   ARCHIVED: 'neutral',
 };
 
-/** Platform admin landing screen: every club on the platform. */
-export default function PlatformTenantsScreen() {
+/**
+ * Every club on the platform, with the owner attached.
+ *
+ * Owner-first is the point. In the old single-club world a club list was the
+ * whole model; now a club without a named owner is an incomplete record, so the
+ * owner is shown on every row and the ones missing it are pulled to the top.
+ */
+export default function PlatformClubsScreen() {
   const theme = useTheme();
-  const session = useAppSession();
-  const signOut = useSignOut();
-  const { data, isPending, isError, error, refetch, isRefetching } = useTenants();
+  const clubs = usePlatformClubs();
+  const [search, setSearch] = useState('');
+
+  const { ownerless, matching } = useMemo(() => {
+    const all = clubs.data ?? [];
+    const needle = search.trim().toLowerCase();
+    const filtered =
+      needle === ''
+        ? all
+        : all.filter(
+            (club) =>
+              club.name.toLowerCase().includes(needle) ||
+              club.slug.toLowerCase().includes(needle) ||
+              (club.owner_email ?? '').toLowerCase().includes(needle) ||
+              (club.city ?? '').toLowerCase().includes(needle),
+          );
+
+    return {
+      ownerless: filtered.filter((club) => club.owner_user_id === null),
+      matching: filtered.filter((club) => club.owner_user_id !== null),
+    };
+  }, [clubs.data, search]);
 
   return (
-    <Screen padded={false} edges={['left', 'right']} testID="platform-tenants-screen">
-      <View style={{ padding: theme.spacing.lg, gap: theme.spacing.xs }}>
-        <Text variant="caption" color="textMuted">
-          {session.status === 'platform-admin'
-            ? session.platformRole.replace('_', ' ')
-            : 'Platform'}
-        </Text>
-        <Text variant="displayMd">Clubs</Text>
-        <Text variant="bodySm" color="textMuted">
-          Branding, configuration and status for every tenant.
-        </Text>
-      </View>
+    <Screen padded={false} testID="platform-tenants-screen">
+      <ScrollView
+        contentContainerStyle={{
+          padding: theme.spacing.lg,
+          gap: theme.spacing.xl,
+          paddingBottom: theme.spacing['5xl'],
+        }}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl refreshing={clubs.isRefetching} onRefresh={() => void clubs.refetch()} />
+        }
+      >
+        {clubs.isError ? (
+          <ErrorState error={clubs.error} onRetry={() => void clubs.refetch()} />
+        ) : null}
+        {clubs.isPending ? <LoadingState label="Loading clubs" /> : null}
 
-      {isPending ? (
-        <LoadingState />
-      ) : isError ? (
-        <ErrorState error={error} onRetry={() => void refetch()} />
-      ) : (
-        <FlatList
-          data={data}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{
-            paddingHorizontal: theme.spacing.lg,
-            paddingBottom: theme.spacing['3xl'],
-            gap: theme.spacing.md,
-            flexGrow: 1,
-          }}
-          refreshControl={
-            <RefreshControl refreshing={isRefetching} onRefresh={() => void refetch()} />
-          }
-          renderItem={({ item }) => (
-            <Link href={{ pathname: '/(platform)/tenant/[id]', params: { id: item.id } }} asChild>
-              <Card onPress={() => undefined} style={{ gap: theme.spacing.sm }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
-                  <View
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: theme.radius.md,
-                      backgroundColor: item.primary_color,
-                    }}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Text variant="titleMd" numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    <Text variant="caption" color="textMuted">
-                      {item.slug} · {item.currency_code} · {item.timezone}
-                    </Text>
-                  </View>
-                  <Badge label={item.status} tone={STATUS_TONE[item.status]} />
-                </View>
-              </Card>
-            </Link>
-          )}
-          ListEmptyComponent={
-            <EmptyState
-              icon={Building2}
-              title="No clubs yet"
-              description="Create the first tenant to get started."
-            />
-          }
-          ListFooterComponent={
-            <Button
-              label="Sign out"
-              variant="ghost"
-              icon={LogOut}
-              onPress={() => void signOut()}
-              style={{ marginTop: theme.spacing.xl }}
-            />
-          }
+        <Input
+          placeholder="Search by club, owner or city"
+          value={search}
+          onChangeText={setSearch}
+          autoCapitalize="none"
+          testID="club-search"
         />
-      )}
+
+        {ownerless.length > 0 ? (
+          <View>
+            <SectionHeader
+              title="No owner assigned"
+              subtitle="Nobody can configure these clubs or read their books"
+            />
+            <Card
+              style={{ gap: theme.spacing.xs, borderColor: theme.colors.warning, borderWidth: 1 }}
+            >
+              {ownerless.map((club, index) => (
+                <View key={club.tenant_id}>
+                  {index > 0 ? <Divider /> : null}
+                  <ClubRow club={club} />
+                </View>
+              ))}
+            </Card>
+          </View>
+        ) : null}
+
+        {matching.length > 0 ? (
+          <View>
+            <SectionHeader
+              title="Clubs"
+              subtitle={`${matching.length} with an owner`}
+              action={{ label: 'New club', onPress: () => router.push('/(platform)/club-new') }}
+            />
+            <Card style={{ gap: theme.spacing.xs }}>
+              {matching.map((club, index) => (
+                <View key={club.tenant_id}>
+                  {index > 0 ? <Divider /> : null}
+                  <ClubRow club={club} />
+                </View>
+              ))}
+            </Card>
+          </View>
+        ) : null}
+
+        {!clubs.isPending && (clubs.data ?? []).length === 0 ? (
+          <EmptyState
+            icon={Building2}
+            title="No clubs yet"
+            description="Create the first club and hand it to an owner."
+          />
+        ) : null}
+
+        {!clubs.isPending &&
+        (clubs.data ?? []).length > 0 &&
+        matching.length + ownerless.length === 0 ? (
+          <EmptyState title="Nothing matches" description={`No club matches “${search}”.`} />
+        ) : null}
+
+        <Button
+          label="Create a club"
+          icon={Plus}
+          variant="outline"
+          fullWidth
+          onPress={() => router.push('/(platform)/club-new')}
+        />
+      </ScrollView>
     </Screen>
   );
+}
+
+function ClubRow({ club }: { readonly club: PlatformClub }) {
+  const theme = useTheme();
+
+  return (
+    <ListItem
+      title={club.name}
+      subtitle={
+        club.owner_user_id === null
+          ? 'No owner assigned'
+          : `${club.owner_name ?? club.owner_email} · ${club.staff_count} staff · ${club.tables_count} tables`
+      }
+      showChevron
+      onPress={() => router.push(`/(platform)/tenant/${club.tenant_id}`)}
+      testID={`club-row-${club.slug}`}
+      trailing={
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+          {club.owner_user_id === null ? (
+            <TriangleAlert color={theme.colors.warning} size={16} />
+          ) : null}
+          <Badge label={label(club.status)} tone={STATUS_TONE[club.status] ?? 'neutral'} />
+          <View
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: 9,
+              backgroundColor: club.primary_color || theme.colors.primary,
+            }}
+          />
+        </View>
+      }
+    />
+  );
+}
+
+function label(status: string): string {
+  if (status === 'ACTIVE') return 'Live';
+  if (status === 'TRIAL') return 'Trial';
+  if (status === 'SUSPENDED') return 'Suspended';
+  return 'Archived';
 }

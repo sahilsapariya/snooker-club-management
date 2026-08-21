@@ -13,6 +13,7 @@ import {
   markTimeCompleted,
   removeSessionItem,
   startSession,
+  updateSessionFrames,
   updateSessionItemQuantity,
   type AddSessionItemInput,
   type CloseSessionInput,
@@ -140,6 +141,17 @@ export function useAddSessionItem(tenantId: string | null) {
       if (!tenantId) return;
       await invalidateSessionViews(queryClient, tenantId, input.sessionId);
       await queryClient.invalidateQueries({ queryKey: queryKeys.products.all(tenantId) });
+    },
+  });
+}
+
+export function useUpdateSessionFrames(tenantId: string | null, sessionId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (framesPlayed: number) => updateSessionFrames(sessionId as string, framesPlayed),
+    onSuccess: async () => {
+      if (!tenantId) return;
+      await invalidateSessionViews(queryClient, tenantId, sessionId ?? undefined);
     },
   });
 }

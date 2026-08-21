@@ -1,8 +1,10 @@
 import { Redirect, Tabs } from 'expo-router';
 import { Bell, LayoutGrid, MoreHorizontal, Timer, Wallet } from 'lucide-react-native';
+import { View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LoadingState, Screen } from '@/components/ui';
-import { useAppSession } from '@/features/auth';
+import { ActiveClubBar, useAppSession } from '@/features/auth';
 import { usePushRegistration } from '@/features/notifications';
 import { useTheme } from '@/theme';
 
@@ -18,6 +20,10 @@ import { useTheme } from '@/theme';
  * guarantee, not a security one: were someone to reach `/tables` anyway, every
  * query behind it would return an empty set because Row Level Security has no
  * membership to match them against.
+ *
+ * Above the tabs sits the active-club bar. It is here, in the shell, rather
+ * than on each screen, so that no screen can be built that forgets to say which
+ * club its numbers belong to.
  */
 export default function TenantLayout() {
   const theme = useTheme();
@@ -41,58 +47,73 @@ export default function TenantLayout() {
   }
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: theme.colors.primaryOnSurface,
-        tabBarInactiveTintColor: theme.colors.textMuted,
-        tabBarStyle: {
-          backgroundColor: theme.colors.surface,
-          borderTopColor: theme.colors.border,
-        },
-        tabBarLabelStyle: theme.typography.caption,
-      }}
-    >
-      <Tabs.Screen
-        name="tables"
-        options={{
-          title: 'Tables',
-          tabBarIcon: ({ color, size }) => <LayoutGrid color={color} size={size} />,
-        }}
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.surface }}>
+      <ActiveClubBar
+        tenant={session.tenant}
+        clubs={session.clubs}
+        canSwitch={session.canSwitchClubs}
+        testID="active-club-bar"
       />
-      <Tabs.Screen
-        name="sessions"
-        options={{
-          title: 'Sessions',
-          tabBarIcon: ({ color, size }) => <Timer color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="cash"
-        options={{
-          title: 'Cash',
-          tabBarIcon: ({ color, size }) => <Wallet color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="notifications"
-        options={{
-          title: 'Alerts',
-          tabBarIcon: ({ color, size }) => <Bell color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="more"
-        options={{
-          title: 'More',
-          tabBarIcon: ({ color, size }) => <MoreHorizontal color={color} size={size} />,
-        }}
-      />
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+        <Tabs
+          screenOptions={{
+            headerShown: false,
+            tabBarActiveTintColor: theme.colors.primaryOnSurface,
+            tabBarInactiveTintColor: theme.colors.textMuted,
+            tabBarStyle: {
+              backgroundColor: theme.colors.surface,
+              borderTopColor: theme.colors.border,
+            },
+            tabBarLabelStyle: theme.typography.caption,
+          }}
+        >
+          <Tabs.Screen
+            name="tables"
+            options={{
+              title: 'Tables',
+              tabBarIcon: ({ color, size }) => <LayoutGrid color={color} size={size} />,
+            }}
+          />
+          <Tabs.Screen
+            name="sessions"
+            options={{
+              title: 'Sessions',
+              tabBarIcon: ({ color, size }) => <Timer color={color} size={size} />,
+            }}
+          />
+          <Tabs.Screen
+            name="cash"
+            options={{
+              title: 'Cash',
+              tabBarIcon: ({ color, size }) => <Wallet color={color} size={size} />,
+            }}
+          />
+          <Tabs.Screen
+            name="notifications"
+            options={{
+              title: 'Alerts',
+              tabBarIcon: ({ color, size }) => <Bell color={color} size={size} />,
+            }}
+          />
+          <Tabs.Screen
+            name="more"
+            options={{
+              title: 'More',
+              tabBarIcon: ({ color, size }) => <MoreHorizontal color={color} size={size} />,
+            }}
+          />
 
-      {/* Reachable by route, deliberately absent from the tab bar. */}
-      <Tabs.Screen name="reports" options={{ href: null, title: 'Reports' }} />
-      <Tabs.Screen name="manage" options={{ href: null, title: 'Manage club' }} />
-      <Tabs.Screen name="settings" options={{ href: null, title: 'Settings' }} />
-    </Tabs>
+          {/* Reachable by route, deliberately absent from the tab bar. */}
+          <Tabs.Screen name="reports" options={{ href: null, title: 'Reports' }} />
+          <Tabs.Screen name="manage" options={{ href: null, title: 'Manage club' }} />
+          <Tabs.Screen name="settings" options={{ href: null, title: 'Settings' }} />
+          <Tabs.Screen name="tables-setup" options={{ href: null, title: 'Tables' }} />
+          <Tabs.Screen name="staff" options={{ href: null, title: 'Staff' }} />
+          <Tabs.Screen name="billing" options={{ href: null, title: 'Billing rules' }} />
+          <Tabs.Screen name="activity" options={{ href: null, title: 'Activity' }} />
+          <Tabs.Screen name="expenses" options={{ href: null, title: 'Expenses' }} />
+        </Tabs>
+      </View>
+    </SafeAreaView>
   );
 }

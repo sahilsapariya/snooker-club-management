@@ -34,8 +34,13 @@ export default function TablesScreen() {
     useClubTables(tenantId);
   const openSessions = useOpenSessions(tenantId);
 
-  // Flags sessions whose booked time has elapsed. Never ends them.
-  useTimeCompletedWatcher(tenantId, openSessions.data);
+  // Flags sessions whose booked time has elapsed. Never ends them. The club
+  // name goes with it: an owner running several clubs on one phone must be able
+  // to tell from the banner alone which counter needs attention.
+  useTimeCompletedWatcher(tenantId, openSessions.data, {
+    notify: true,
+    ...(tenant ? { clubName: tenant.name } : {}),
+  });
 
   const [startTable, setStartTable] = useState<ClubTableOverview | null>(null);
   const [openSessionId, setOpenSessionId] = useState<string | null>(null);

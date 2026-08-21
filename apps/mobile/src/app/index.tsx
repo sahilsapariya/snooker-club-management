@@ -33,10 +33,15 @@ export default function IndexRoute() {
       return <Redirect href="/(auth)/login" />;
 
     case 'platform-admin':
-      return <Redirect href="/(platform)/tenants" />;
+      return <Redirect href="/(platform)" />;
 
     case 'tenant-user':
       return <Redirect href="/(tenant)/tables" />;
+
+    // Several clubs and none chosen yet. Deliberately a route rather than an
+    // inline branch, so "switch club" can send an owner back to it.
+    case 'club-selection':
+      return <Redirect href="/select-club" />;
 
     case 'error':
       return (

@@ -204,6 +204,30 @@ export async function startSession(input: StartSessionInput): Promise<Session> {
  * so staff can be alerted; the clock keeps running and only an explicit close
  * sets `ended_at`.
  */
+/**
+ * Records frames as they are played.
+ *
+ * Written to the session rather than held in component state so the count
+ * survives the sheet closing, is visible to whoever takes over the counter, and
+ * is the same number the bill is computed from. It only ever affects the
+ * charge; `actual_duration_seconds` is generated from the timestamps and is not
+ * reachable from here.
+ */
+export async function updateSessionFrames(
+  sessionId: string,
+  framesPlayed: number,
+): Promise<Session> {
+  const result = await supabase
+    .from('sessions')
+    .update({ frames_played: Math.max(0, Math.floor(framesPlayed)) })
+    .eq('id', sessionId)
+    .in('status', ['ACTIVE', 'TIME_COMPLETED'])
+    .select('*')
+    .single();
+
+  return unwrap(result, 'record frames');
+}
+
 export async function markTimeCompleted(sessionId: string): Promise<Session> {
   const result = await supabase
     .from('sessions')
@@ -220,6 +244,8 @@ export interface CloseSessionInput {
   readonly sessionId: string;
   readonly endedBy: string;
   readonly charge: ChargeResult;
+  /** Frames recorded during play. Priced already; written so the bill can be re-read. */
+  readonly framesPlayed: number;
   readonly discountMinor: number;
   readonly payment: {
     readonly status: PaymentStatus;
@@ -249,7 +275,10 @@ export async function closeSession(input: CloseSessionInput): Promise<Session> {
       billable_duration_seconds: input.charge.billableSeconds,
       table_charge_minor: input.charge.tableChargeMinor,
       discount_minor: input.discountMinor,
-      frames_played: 0,
+      // Persisted from what was recorded, not reset. The engine has already
+      // priced these frames into `table_charge_minor`, so writing 0 here would
+      // leave a closed session whose charge nothing on the row explains.
+      frames_played: Math.max(0, Math.floor(input.framesPlayed)),
       payment_status: input.payment.status,
       payment_method: input.payment.method,
       paid_amount_minor: input.payment.paidAmountMinor,

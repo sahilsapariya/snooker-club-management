@@ -3,22 +3,23 @@ import { logger } from '@/lib/logger';
 import { supabase } from '@/lib/supabase';
 
 import type {
-  AppSessionState,
+  AccessibleClub,
   BillingSettings,
   PlatformAdmin,
   Profile,
+  SessionIdentity,
   Tenant,
   TenantMembership,
 } from '../model/types';
 
 const log = logger.child('auth:context');
 
-interface MembershipWithTenant extends TenantMembership {
+interface MembershipRow extends TenantMembership {
   readonly tenant: Tenant | null;
 }
 
 /**
- * Resolves who the signed-in user is.
+ * Resolves who the signed-in user is, and every club they can reach.
  *
  * Note what is NOT happening here: the client does not tell the server which
  * tenant it wants, and it does not read a role out of the JWT. It asks three
@@ -26,66 +27,37 @@ interface MembershipWithTenant extends TenantMembership {
  * back. A user with no membership simply receives no membership rows - there is
  * nothing to spoof.
  *
- * The three reads are independent, so they are issued together.
+ * This is keyed by user, not by club. Switching club must not refetch it, which
+ * is why the active club is applied later, in `useAppSession`.
  */
-export async function resolveSessionContext(userId: string): Promise<AppSessionState> {
-  try {
-    const [profile, platformAdmin, membership] = await Promise.all([
-      fetchProfile(userId),
-      fetchPlatformAdmin(userId),
-      fetchMembership(userId),
-    ]);
+export async function resolveSessionIdentity(userId: string): Promise<SessionIdentity> {
+  const [profile, platformAdmin, memberships] = await Promise.all([
+    fetchProfile(userId),
+    fetchPlatformAdmin(userId),
+    fetchMemberships(userId),
+  ]);
 
-    if (!profile) {
-      // The auth.users trigger creates this row, so its absence means the
-      // account was provisioned outside the normal path.
-      throw new AppError({
-        code: 'auth/no-tenant',
-        message: 'This account is not set up yet. Contact your club owner.',
-        technicalMessage: `No public.profiles row for auth user ${userId}`,
-      });
-    }
-
-    if (!profile.is_active) {
-      log.info('Signed-in account is disabled', { userId });
-      return { status: 'account-disabled', profile };
-    }
-
-    if (platformAdmin) {
-      log.info('Resolved a platform operator', { role: platformAdmin.role });
-      return { status: 'platform-admin', profile, platformRole: platformAdmin.role };
-    }
-
-    if (!membership || !membership.tenant) {
-      log.info('Signed-in account has no club membership', { userId });
-      return { status: 'no-tenant', profile };
-    }
-
-    const tenant = membership.tenant;
-
-    if (tenant.status !== 'ACTIVE' && tenant.status !== 'TRIAL') {
-      log.info('Club is not currently active', { tenantId: tenant.id, status: tenant.status });
-      return { status: 'tenant-suspended', profile, tenant };
-    }
-
-    // Billing settings are readable only while the club is active, which is why
-    // this is fetched after the status check rather than alongside the rest.
-    const billingSettings = await fetchBillingSettings(tenant.id);
-
-    log.info('Resolved a club user', { tenantId: tenant.id, role: membership.role });
-    return {
-      status: 'tenant-user',
-      profile,
-      tenant,
-      membership,
-      role: membership.role,
-      billingSettings,
-    };
-  } catch (error) {
-    const appError = toAppError(error, 'We could not load your account.');
-    log.error('Failed to resolve the session context', appError);
-    return { status: 'error', error: appError };
+  if (!profile) {
+    // The auth.users trigger creates this row, so its absence means the
+    // account was provisioned outside the normal path.
+    throw new AppError({
+      code: 'auth/no-tenant',
+      message: 'This account is not set up yet. Contact your club owner.',
+      technicalMessage: `No public.profiles row for auth user ${userId}`,
+    });
   }
+
+  const clubs: AccessibleClub[] = memberships
+    .filter((row): row is MembershipRow & { tenant: Tenant } => row.tenant !== null)
+    .map((row) => ({ tenant: row.tenant, membership: row, role: row.role }))
+    .sort((a, b) => a.tenant.name.localeCompare(b.tenant.name));
+
+  log.info('Resolved identity', {
+    isPlatformAdmin: platformAdmin !== null,
+    clubs: clubs.length,
+  });
+
+  return { profile, platformAdmin, clubs };
 }
 
 async function fetchProfile(userId: string): Promise<Profile | null> {
@@ -103,25 +75,44 @@ async function fetchPlatformAdmin(userId: string): Promise<PlatformAdmin | null>
   return unwrap(result, 'load platform admin');
 }
 
-async function fetchMembership(userId: string): Promise<MembershipWithTenant | null> {
-  // One active membership per user today. `limit(1)` plus `maybeSingle()` keeps
-  // this correct if that constraint is relaxed for multi-club staff later.
+/**
+ * Every active membership, with its club.
+ *
+ * No `limit(1)`: an owner may run several clubs on one login. The receptionist
+ * case is constrained in the database, not here.
+ */
+async function fetchMemberships(userId: string): Promise<MembershipRow[]> {
   const result = await supabase
     .from('tenant_memberships')
     .select('*, tenant:tenants(*)')
     .eq('user_id', userId)
     .eq('status', 'ACTIVE')
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  return unwrap(result, 'load tenant membership');
+    .order('created_at', { ascending: true });
+
+  return (unwrap(result, 'load club memberships') ?? []) as MembershipRow[];
 }
 
-async function fetchBillingSettings(tenantId: string): Promise<BillingSettings | null> {
-  const result = await supabase
-    .from('tenant_billing_settings')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .maybeSingle();
-  return unwrap(result, 'load billing settings');
+/**
+ * Billing rules for one club.
+ *
+ * Fetched separately from identity because it is club-scoped, not user-scoped -
+ * switching club must refetch this but not the membership set. Readable only
+ * while the club is active, which is why a suspended club yields null rather
+ * than an error.
+ */
+export async function fetchBillingSettings(tenantId: string): Promise<BillingSettings | null> {
+  try {
+    const result = await supabase
+      .from('tenant_billing_settings')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+    return unwrap(result, 'load billing settings');
+  } catch (error) {
+    log.warn('Could not load billing settings', {
+      tenantId,
+      error: String(toAppError(error).code),
+    });
+    return null;
+  }
 }

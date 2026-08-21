@@ -13,67 +13,97 @@ export type NotificationType = Database['public']['Enums']['notification_type'];
  * Declared as one typed union so that the in-app inbox, the local notification
  * presenter and the future server-side push worker all agree on the payload -
  * adding an event is a change in one place, not three.
+ *
+ * Every event carries the club it belongs to. An owner may run several clubs on
+ * one login and one phone, so a notification reading "Table 3's time is up" is
+ * actively misleading without the club name - and there is no "current club" on
+ * a lock screen to infer it from.
  */
-export type ClubNotification =
-  | { readonly type: 'SESSION_STARTED'; readonly tableName: string; readonly sessionId: string }
-  | {
-      readonly type: 'SESSION_TIME_COMPLETED';
-      readonly tableName: string;
-      readonly sessionId: string;
-      readonly bookedMinutes: number;
-    }
-  | {
-      readonly type: 'SESSION_CLOSED';
-      readonly tableName: string;
-      readonly sessionId: string;
-      readonly totalMinor: number;
-    }
-  | {
-      readonly type: 'PAYMENT_RECEIVED';
-      readonly sessionId: string;
-      readonly amountMinor: number;
-      readonly method: string;
-    }
-  | {
-      readonly type: 'LOW_STOCK';
-      readonly productName: string;
-      readonly productId: string;
-      readonly remaining: number;
-    }
-  | { readonly type: 'CASH_CLOSING_REMINDER'; readonly businessDate: string }
-  | { readonly type: 'SYSTEM_ALERT'; readonly title: string; readonly body: string };
+interface ClubContext {
+  /** Which club this happened at. Rendered into every title or body. */
+  readonly clubName: string;
+  readonly tenantId: string;
+}
+
+export type ClubNotification = ClubContext &
+  (
+    | { readonly type: 'SESSION_STARTED'; readonly tableName: string; readonly sessionId: string }
+    | {
+        readonly type: 'SESSION_TIME_COMPLETED';
+        readonly tableName: string;
+        readonly sessionId: string;
+        readonly bookedMinutes: number;
+      }
+    | {
+        readonly type: 'SESSION_CLOSED';
+        readonly tableName: string;
+        readonly sessionId: string;
+        readonly totalMinor: number;
+      }
+    | {
+        readonly type: 'PAYMENT_RECEIVED';
+        readonly sessionId: string;
+        readonly amountMinor: number;
+        readonly method: string;
+      }
+    | {
+        readonly type: 'LOW_STOCK';
+        readonly productName: string;
+        readonly productId: string;
+        readonly remaining: number;
+      }
+    | { readonly type: 'CASH_CLOSING_REMINDER'; readonly businessDate: string }
+    | { readonly type: 'SYSTEM_ALERT'; readonly title: string; readonly body: string }
+  );
 
 export interface RenderedNotification {
   readonly title: string;
   readonly body: string;
 }
 
-/** Single place where an event becomes words. Kept out of components. */
+/**
+ * Single place where an event becomes words. Kept out of components.
+ *
+ * The club name goes in the *title*, not the body: a push banner truncates the
+ * body long before the title, and on a phone belonging to someone who runs four
+ * clubs the club is the first thing that has to be legible.
+ */
 export function renderNotification(notification: ClubNotification): RenderedNotification {
+  const club = notification.clubName;
+
   switch (notification.type) {
     case 'SESSION_STARTED':
-      return { title: `${notification.tableName} is in play`, body: 'A session has been started.' };
+      return {
+        title: `${club}: ${notification.tableName} is in play`,
+        body: 'A session has been started.',
+      };
     case 'SESSION_TIME_COMPLETED':
       return {
-        title: `${notification.tableName}: booked time is up`,
+        title: `${club}: ${notification.tableName}'s time is up`,
         body: `The ${notification.bookedMinutes} minute booking has elapsed. The session is still running until you close it.`,
       };
     case 'SESSION_CLOSED':
-      return { title: `${notification.tableName} is free`, body: 'The session has been closed.' };
+      return {
+        title: `${club}: ${notification.tableName} is free`,
+        body: 'The session has been closed.',
+      };
     case 'PAYMENT_RECEIVED':
-      return { title: 'Payment received', body: `Paid by ${notification.method.toLowerCase()}.` };
+      return {
+        title: `${club}: payment received`,
+        body: `Paid by ${notification.method.toLowerCase()}.`,
+      };
     case 'LOW_STOCK':
       return {
-        title: `${notification.productName} is running low`,
+        title: `${club}: ${notification.productName} is running low`,
         body: `${notification.remaining} left in stock.`,
       };
     case 'CASH_CLOSING_REMINDER':
       return {
-        title: 'Cash closing is due',
+        title: `${club}: cash closing is due`,
         body: `The till for ${notification.businessDate} has not been reconciled yet.`,
       };
     case 'SYSTEM_ALERT':
-      return { title: notification.title, body: notification.body };
+      return { title: `${club}: ${notification.title}`, body: notification.body };
   }
 }
 

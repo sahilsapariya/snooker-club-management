@@ -19,10 +19,11 @@ Security, not by application code.
 7. [Commands](#7-commands)
 8. [How authentication works](#8-how-authentication-works)
 9. [How tenant isolation works](#9-how-tenant-isolation-works)
+   - [9a. One owner, many clubs](#9a-one-owner-many-clubs)
 10. [How roles work](#10-how-roles-work)
 11. [How theming works](#11-how-theming-works)
 12. [Creating the first platform super admin](#12-creating-the-first-platform-super-admin)
-13. [Creating a tenant](#13-creating-a-tenant)
+13. [Creating a club and assigning an owner](#13-creating-a-club-and-assigning-an-owner)
 14. [Database types](#14-database-types)
 15. [Testing](#15-testing)
 16. [Builds](#16-builds)
@@ -32,33 +33,63 @@ Security, not by application code.
 
 ## 1. What this is
 
-A private operational product sold to clubs. Two audiences:
+A private operational product sold to club owners. The hierarchy is four levels
+deep, and every design decision in the repository follows from it:
 
-| Audience                          | What they do                                                                |
-| --------------------------------- | --------------------------------------------------------------------------- |
-| **Platform super admin** (you)    | Creates clubs, sets their branding, configuration and status, manages staff |
-| **Club staff** (owner, reception) | Runs the floor: tables, sessions, sales, expenses, cash                     |
+```
+PLATFORM  ── you. Creates owners' clubs, brands them, suspends them.
+   │
+   └── OWNER  ── buys the product. May run ONE club or MANY, from one login.
+          │
+          └── CLUB  ── a physical venue. Its own tables, prices, staff, books.
+                 │
+                 └── RECEPTIONIST  ── works at exactly one club.
+```
 
-Club staff can never change the platform-controlled fields (name, logo,
-colours, currency, timezone, status). That is enforced in the database, not by
-hiding buttons — see [section 9](#9-how-tenant-isolation-works).
+| Audience                 | What they do                                                                      |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| **Platform super admin** | Creates clubs, assigns owners, sets branding and status. Never touches club books |
+| **Club owner**           | Configures their clubs: tables, staff, prices, billing rules. Reads the books     |
+| **Receptionist**         | Runs the floor: tables, sessions, sales, expenses, cash                           |
+
+Three boundaries hold this together, and all three are enforced by Postgres
+rather than by hiding buttons:
+
+- **Club staff cannot change platform-controlled fields** (name, logo, colours,
+  currency, timezone, status). `public.tenants` has INSERT, UPDATE and DELETE
+  revoked from the `authenticated` role entirely.
+- **The platform cannot change how a club charges.** Billing settings, pricing
+  rules, tables and products require `app.is_tenant_owner(tenant_id)` — which a
+  platform admin is not. What a club charges is the club's commercial decision.
+- **An owner reaches their clubs and nothing else.** `app.tenant_ids()` returns
+  every club the caller holds an active membership in, and every RLS policy asks
+  whether the caller is a member of the tenant a _row_ belongs to — never what
+  the client claims to be looking at.
+
+See [section 9](#9-how-tenant-isolation-works) and
+[section 9a](#9a-one-owner-many-clubs).
 
 ### What works today
 
-| Area                                                | State                                                          |
-| --------------------------------------------------- | -------------------------------------------------------------- |
-| Sign in, roles, club resolution, theming            | done                                                           |
-| Tables floor view with live occupancy               | done                                                           |
-| Session lifecycle: start, time-up, close, cancel    | done                                                           |
-| Configurable billing engine                         | done                                                           |
-| Food and drink on a bill, with stock ledger         | done                                                           |
-| Payments: full, partial, discount, waive            | done                                                           |
-| Expenses and cash-drawer reconciliation             | done                                                           |
-| Reports: revenue, tables, products, expenses, debts | done                                                           |
-| Owner configuration of products and pricing         | done                                                           |
-| Platform admin: club list and detail                | read-only                                                      |
-| Push notification delivery                          | not built (see [docs/notifications.md](docs/notifications.md)) |
-| Equipment screens                                   | not built                                                      |
+| Area                                                  | State                                                          |
+| ----------------------------------------------------- | -------------------------------------------------------------- |
+| Sign in, roles, club resolution, theming              | done                                                           |
+| Tables floor view with live occupancy                 | done                                                           |
+| Session lifecycle: start, time-up, close, cancel      | done                                                           |
+| Configurable billing engine                           | done                                                           |
+| Food and drink on a bill, with stock ledger           | done                                                           |
+| Payments: full, partial, discount, waive              | done                                                           |
+| Expenses and cash-drawer reconciliation               | done                                                           |
+| Reports: revenue, tables, products, expenses, debts   | done                                                           |
+| Owner configuration of products and pricing           | done                                                           |
+| Multi-club ownership: selection, switching, isolation | done                                                           |
+| Owner configuration of tables and staff               | done                                                           |
+| Owner configuration of billing rules                  | done                                                           |
+| Per-club audit trail                                  | done                                                           |
+| Platform admin: owners, clubs, create, brand, assign  | done                                                           |
+| Push notification delivery                            | not built (see [docs/notifications.md](docs/notifications.md)) |
+| Equipment screens                                     | not built                                                      |
+| Creating login accounts from inside the app           | not built, by design — needs the service role                  |
 
 Two business rules the whole design protects:
 
@@ -79,7 +110,8 @@ Two business rules the whole design protects:
 │                                              │
 │   src/app/          Expo Router routes        │
 │     (auth)/         signed out                │
-│     (tenant)/       club staff                │
+│     select-club     signed in, choosing       │
+│     (tenant)/       club staff, one club      │
 │     (platform)/     product owner             │
 │                                              │
 │   src/features/     feature modules           │
@@ -106,13 +138,19 @@ Two business rules the whole design protects:
 
 State is split three ways and deliberately kept that way:
 
-| Kind             | Lives in                          |
-| ---------------- | --------------------------------- |
-| **Auth state**   | Zustand (`src/stores/auth.store`) |
-| **Server state** | TanStack Query                    |
-| **UI state**     | Component state / Zustand         |
+| Kind             | Lives in                                 |
+| ---------------- | ---------------------------------------- |
+| **Auth state**   | Zustand (`src/stores/auth.store`)        |
+| **Active club**  | Zustand (`src/stores/active-club.store`) |
+| **Server state** | TanStack Query                           |
+| **UI state**     | Component state / Zustand                |
 
 Anything that came out of Postgres belongs in the query cache, never in Zustand.
+
+The active club is the one exception worth calling out, and it is not an
+exception to the rule above: it holds a _choice_, not data. It decides what the
+app shows, never what the database allows. Anyone can put any uuid in it; RLS is
+what makes that useless.
 
 ---
 
@@ -299,17 +337,22 @@ Phone and laptop must be on the same Wi-Fi, and your firewall must allow ports
 
 All seeded accounts use the password **`DevPassword123`**:
 
-| Email                        | Role                        |
-| ---------------------------- | --------------------------- |
-| `admin@snookerplatform.dev`  | platform super admin        |
-| `owner@royalsnooker.dev`     | owner, Royal Snooker Club   |
-| `reception@royalsnooker.dev` | receptionist, Royal Snooker |
-| `owner@bluecue.dev`          | owner, Blue Cue Club        |
-| `reception@bluecue.dev`      | receptionist, Blue Cue      |
+| Email                        | Role                                               |
+| ---------------------------- | -------------------------------------------------- |
+| `admin@snookerplatform.dev`  | platform super admin, no club                      |
+| `owner@royalsnooker.dev`     | owner of **two** clubs: Royal Snooker + Cue Lounge |
+| `reception@royalsnooker.dev` | receptionist, Royal Snooker                        |
+| `owner@bluecue.dev`          | owner, Blue Cue Club                               |
+| `reception@bluecue.dev`      | receptionist, Blue Cue                             |
 
-Two clubs are seeded on purpose: tenant isolation is not observable with one.
-Sign in as the two receptionists side by side and you will see completely
-different data.
+Three clubs are seeded on purpose:
+
+- Two are the minimum before tenant isolation is observable at all. Sign in as
+  the two receptionists side by side and you will see completely different data.
+- The third gives one owner two clubs, which is what makes the club selector,
+  the club switcher and per-club cache isolation exercisable without
+  hand-building data first. Sign in as `owner@royalsnooker.dev` and you land on
+  the selector; the two clubs bill differently and are different colours.
 
 There is **no sign-up screen** — self-registration is disabled by design.
 Accounts are provisioned by the platform admin; see
@@ -449,9 +492,12 @@ The client never sends a tenant id or a role and asks to be trusted. The result
 is one closed union (`AppSessionState`) covering every case:
 
 `loading` · `unauthenticated` · `error` · `account-disabled` · `no-tenant` ·
-`tenant-suspended` · `platform-admin` · `tenant-user`
+`tenant-suspended` · `platform-admin` · `club-selection` · `tenant-user`
 
 `src/app/index.tsx` switches on it once, so no screen can forget a branch.
+
+`club-selection` is what multi-club ownership added: signed in, several clubs
+reachable, none chosen yet. A user with exactly one club never enters it.
 
 ---
 
@@ -464,9 +510,16 @@ SECURITY DEFINER helpers in the non-exposed `app` schema:
 
 ```sql
 app.is_platform_admin()          app.can_read_tenant(tenant_id)
-app.get_user_tenant_id()         app.can_operate_tenant(tenant_id)
+app.tenant_ids()                 app.can_operate_tenant(tenant_id)
 app.has_tenant_role(id, roles…)  app.can_manage_tenant(tenant_id)
+app.is_tenant_owner(tenant_id)   app.shares_tenant_with(user_id)
 ```
+
+Note the shape of the question each one asks: _is the caller a member of the
+tenant this row belongs to_. Never _what is the caller's tenant_. That
+distinction is why supporting one owner across many clubs required no policy
+rewrite. (`app.get_user_tenant_id()` still exists but is deprecated — it returns
+NULL for anyone with more than one club, rather than picking one arbitrarily.)
 
 They read membership themselves, so a policy never recurses into the table it
 protects, and they are `STABLE` so Postgres evaluates them once per statement.
@@ -482,33 +535,91 @@ stock ledger and the audit log have `UPDATE`/`DELETE` revoked outright.
 
 **4. `public.tenants` is not writable by any client role.** Not by club staff,
 and not by the platform admin either — they use SECURITY DEFINER RPCs
-(`platform_create_tenant`, `platform_update_tenant`,
-`platform_set_tenant_status`) that re-check authority inside the database. This
-is what makes "club staff cannot change their own branding" a property of the
-privilege system rather than of one policy being written correctly.
+(`platform_create_club`, `platform_update_tenant`, `platform_set_tenant_status`,
+`platform_assign_owner`, `platform_set_owner_active`) that re-check authority
+inside the database. This is what makes "club staff cannot change their own
+branding" a property of the privilege system rather than of one policy being
+written correctly.
 
 Route guards are UX, not security. All of the above is verified by
-`pnpm db:test` — 119 assertions covering cross-tenant reads, cross-tenant
-writes, role escalation, disabled accounts, suspended tenants and privilege
-shape. See [docs/security.md](docs/security.md).
+`pnpm db:test` — 212 assertions covering cross-tenant reads, cross-tenant
+writes, role escalation, disabled accounts, suspended tenants, multi-club
+ownership and privilege shape. See [docs/security.md](docs/security.md).
+
+---
+
+## 9a. One owner, many clubs
+
+An owner may run any number of clubs from a single login. A receptionist works
+at exactly one. Both facts are enforced in the database, by a single partial
+unique index (migration `0015`):
+
+```sql
+create unique index tenant_memberships_single_active_club_for_staff
+  on public.tenant_memberships (user_id)
+  where status = 'ACTIVE' and role = 'RECEPTIONIST';
+```
+
+Everything else was already multi-club capable: `tenant_memberships` has always
+been many-to-many, and `app.tenant_ids()` has always returned a set.
+
+**In the app.** Three inputs are kept deliberately separate:
+
+| Input        | Kind         | Answers                                      |
+| ------------ | ------------ | -------------------------------------------- |
+| auth session | client state | who is signed in                             |
+| identity     | server state | which clubs they may reach — keyed by _user_ |
+| active club  | client state | which of those they are operating            |
+
+Keying identity by user rather than by club is what makes switching cheap:
+changing club refetches that club's data, never the membership set.
+
+`resolveActiveClub(clubs, storedTenantId)` is a pure function with four
+outcomes — no clubs → nothing; stored club still reachable → it; exactly one
+club → it, no selector; several → nothing, show the selector. A club that has
+been suspended, or that the user has been removed from, is discarded rather than
+silently honoured.
+
+**Cache isolation.** Every club-scoped query key starts
+`['tenant', tenantId, …]`, so two clubs' data physically cannot share an entry.
+On switch, the outgoing club's entries are **removed**, not invalidated — an
+invalidated entry is still served while it refetches, which is exactly the
+"club A's takings under club B's name" flash worth preventing. Platform data
+lives under `['platform', …]` and survives a switch, because it is not club data.
+
+**What is per club, never merged:** tables, staff, prices, billing rules,
+sessions, payments, expenses, cash closings, notifications, reports, the audit
+trail, and the colour of the entire app.
 
 ---
 
 ## 10. How roles work
 
-| Role                   | Where it lives       | Can do                                                      |
-| ---------------------- | -------------------- | ----------------------------------------------------------- |
-| `PLATFORM_SUPER_ADMIN` | `platform_admins`    | manage tenants, branding, configuration, status, staff      |
-| `TENANT_OWNER`         | `tenant_memberships` | everything operational + club configuration, pricing, staff |
-| `TENANT_RECEPTIONIST`  | `tenant_memberships` | daily operations: sessions, sales, expenses, cash           |
+| Role                   | Where it lives       | Can do                                                         |
+| ---------------------- | -------------------- | -------------------------------------------------------------- |
+| `PLATFORM_SUPER_ADMIN` | `platform_admins`    | create clubs, assign owners, brand, suspend, attach staff      |
+| `TENANT_OWNER`         | `tenant_memberships` | everything operational + tables, staff, pricing, billing rules |
+| `TENANT_RECEPTIONIST`  | `tenant_memberships` | daily operations: sessions, sales, expenses, cash              |
 
-Platform operators are deliberately **read-only over a club's books** — sessions,
-session items, expenses, cash closings and stock. They administer clubs; they do
-not quietly edit them.
+Two exclusions are load-bearing and easy to get backwards:
 
-A user belongs to one club today, enforced by a partial unique index. The
-membership table is many-to-many, so supporting multi-club staff later means
-dropping that one index — not a redesign.
+- Platform operators are **read-only over a club's books** — sessions, session
+  items, expenses, cash closings and stock. They administer clubs; they do not
+  quietly edit them.
+- Platform operators **cannot configure a club** either. Since migration `0015`,
+  tables, table types, pricing rules, products, product categories, equipment,
+  expense categories and billing settings all require
+  `app.is_tenant_owner(tenant_id)`. How a club charges is the club's decision.
+
+And in the other direction: an owner **cannot mint another owner**.
+`add_tenant_member` refuses the `OWNER` role unless `app.is_platform_admin()`.
+Ownership is a commercial relationship the platform sells; it is not something a
+login can hand to itself.
+
+Access is revoked by disabling a membership, never by deleting it — a former
+receptionist's name still appears against every session they opened.
+`set_membership_status` enforces two rules RLS cannot express: a club must keep
+at least one active owner, and nobody may revoke their own access.
 
 ---
 
@@ -570,37 +681,53 @@ Authority is a row, not a hard-coded email — revoking it is an `UPDATE`.
 
 ---
 
-## 13. Creating a tenant
+## 13. Creating a club and assigning an owner
 
-As a signed-in platform admin, from the SQL editor or via the app's RPC:
+Normally done in the app: **Platform → Create a club**. The owner must already
+have a Supabase Auth account — creating login credentials needs the service-role
+key, which never reaches the app. See [docs/operations.md](docs/operations.md)
+for creating the account first.
+
+The same thing from SQL, as a signed-in platform admin:
 
 ```sql
-select public.platform_create_tenant(
+select public.platform_create_club(
   p_name          => 'Royal Snooker Club',
   p_slug          => 'royal-snooker',
+  p_owner_email   => 'owner@theirclub.com',
   p_primary_color => '#059669',
   p_currency_code => 'INR',
-  p_timezone      => 'Asia/Kolkata'
+  p_timezone      => 'Asia/Kolkata',
+  p_status        => 'TRIAL'
 );
 ```
 
-A trigger provisions the new club automatically with billing settings, the three
-default table types (Pool Small, Pool Regular, Snooker) and the default expense
-and product categories.
+One transaction does all of it: creates the tenant, provisions it (billing
+settings, the three default table types, default expense and product
+categories), attaches the owner and writes the audit entry. There is no state in
+which a club exists but has no owner — if the email has no account the function
+raises `P0002` with a hint and nothing is created.
 
-Then add staff — the account must already exist in Supabase Auth:
+To move a club to a new owner, or add a second one:
 
 ```sql
-select public.add_tenant_member(
-  '<tenant-uuid>', 'owner@theirclub.com', 'OWNER'
-);
+-- the club changed hands: the previous owner loses access
+select public.platform_assign_owner('<tenant-uuid>', 'new@owner.com', true);
+-- a partnership: both keep access
+select public.platform_assign_owner('<tenant-uuid>', 'second@owner.com', false);
+```
+
+Staff are added by the club's own owner, from **More → Staff** — you do not need
+to be involved:
+
+```sql
 select public.add_tenant_member(
   '<tenant-uuid>', 'reception@theirclub.com', 'RECEPTIONIST'
 );
 ```
 
-`add_tenant_member` is callable by the club's own owner too, so an owner can add
-their own receptionists without you.
+`add_tenant_member` refuses the `OWNER` role unless the caller is a platform
+admin, and refuses a receptionist who is already active at another club.
 
 ---
 
@@ -622,19 +749,23 @@ up in `pnpm typecheck`.
 ## 15. Testing
 
 ```bash
-pnpm test        # Jest: theme contrast, money, durations, secure storage, errors, session states
-pnpm db:test     # pgTAP: tenant isolation, role authorization, business rules
+pnpm test        # Jest: 194 assertions — theme contrast, money, durations, secure
+                 # storage, errors, session states, club resolution, cache isolation
+pnpm db:test     # pgTAP: 212 assertions — isolation, roles, business rules,
+                 # multi-club ownership, platform administration
 ```
 
 The database suite is the important one. It runs as the `authenticated` Postgres
 role, because running as `postgres` would prove nothing — that role has
-`BYPASSRLS`. Three files:
+`BYPASSRLS`. Five files:
 
-| File                             | Covers                                                         |
-| -------------------------------- | -------------------------------------------------------------- |
-| `01_tenant_isolation.test.sql`   | club A cannot read, write or reference club B, by any route    |
-| `02_role_authorization.test.sql` | what each role may do; escalation attempts; privilege shape    |
-| `03_business_rules.test.sql`     | actual vs billable duration, price snapshots, the stock ledger |
+| File                                  | Covers                                                                |
+| ------------------------------------- | --------------------------------------------------------------------- |
+| `01_tenant_isolation.test.sql`        | club A cannot read, write or reference club B, by any route           |
+| `02_role_authorization.test.sql`      | what each role may do; escalation attempts; privilege shape           |
+| `03_business_rules.test.sql`          | actual vs billable duration, price snapshots, the stock ledger        |
+| `04_multi_club.test.sql`              | one owner across many clubs; a receptionist pinned to one; suspension |
+| `05_platform_administration.test.sql` | platform-only reads, club creation, staffing guards, the audit trail  |
 
 ---
 
@@ -660,11 +791,12 @@ Push notifications need a development build, not Expo Go, and an EAS project id
 
 ## 17. Further reading
 
-| Document                                       | Contents                                             |
-| ---------------------------------------------- | ---------------------------------------------------- |
-| [docs/architecture.md](docs/architecture.md)   | module boundaries, state strategy, adding a feature  |
-| [docs/database.md](docs/database.md)           | schema tour, money and time representation           |
-| [docs/security.md](docs/security.md)           | the four isolation layers, threat notes, checklist   |
-| [docs/theming.md](docs/theming.md)             | token reference and how derivation works             |
-| [docs/operations.md](docs/operations.md)       | provisioning clubs and staff, suspension, migrations |
-| [docs/notifications.md](docs/notifications.md) | push architecture and the delivery worker            |
+| Document                                             | Contents                                             |
+| ---------------------------------------------------- | ---------------------------------------------------- |
+| [docs/architecture.md](docs/architecture.md)         | module boundaries, state strategy, adding a feature  |
+| [docs/database.md](docs/database.md)                 | schema tour, money and time representation           |
+| [docs/security.md](docs/security.md)                 | the four isolation layers, threat notes, checklist   |
+| [docs/theming.md](docs/theming.md)                   | token reference and how derivation works             |
+| [docs/operations.md](docs/operations.md)             | provisioning clubs and staff, suspension, migrations |
+| [docs/notifications.md](docs/notifications.md)       | push architecture and the delivery worker            |
+| [docs/audit-2026-08-21.md](docs/audit-2026-08-21.md) | a full screen-by-screen audit of the app             |

@@ -14,7 +14,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 \ir _helpers.psql
-select plan(56);
+select plan(57);
 
 -- ---------------------------------------------------------------------------
 -- Receptionist: may operate, may not configure
@@ -130,9 +130,17 @@ select lives_ok(
      where tenant_id = 'aaaaaaaa-0000-4000-8000-000000000001' and code = 'SNOOKER'$$,
   'owner can add a physical table');
 
+-- Unfiltered, this reaches every club the owner runs - which is exactly right,
+-- and is why the app always scopes writes to the active club.
 select is(
   pg_temp.rows_affected($$update public.tenant_billing_settings set grace_period_minutes = 10$$),
-  1, 'owner can change their own billing rules');
+  2, 'owner can change billing rules in both of their clubs');
+
+select is(
+  pg_temp.rows_affected(
+    $$update public.tenant_billing_settings set grace_period_minutes = 12
+       where tenant_id = 'aaaaaaaa-0000-4000-8000-000000000001'$$),
+  1, 'and can scope the change to one of them');
 
 select isnt((select count(*)::int from public.activity_logs), 0,
             'owner can read the audit trail');

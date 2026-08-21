@@ -130,6 +130,15 @@ Nothing that matters.
   it fail.
 - **`.eq('tenant_id', …)` in a query is an optimisation.** Removing it would not
   change what comes back.
+- **The active club is a display choice, not a claim.** `useActiveClubStore`
+  holds a tenant id chosen by the user from a server-supplied list. Putting an
+  arbitrary uuid in it changes which club the UI _asks_ about; RLS decides
+  whether anything comes back. No policy anywhere reads a tenant id supplied by
+  the client.
+- **`log_activity` cannot forge an author.** It is `SECURITY INVOKER`, and the
+  insert policy on `activity_logs` requires `actor_user_id = auth.uid()`. The
+  actor's role is resolved inside the function from their membership, never
+  accepted as an argument.
 
 ---
 
@@ -152,13 +161,14 @@ server keys, APNs keys.
 
 ## What the tests actually prove
 
-`pnpm db:test` — 119 assertions, run as the `authenticated` Postgres role.
+`pnpm db:test` — 212 assertions, run as the `authenticated` Postgres role.
 Running them as `postgres` would prove nothing: that role has `BYPASSRLS`.
 
 **`01_tenant_isolation.test.sql`**
 
-- A Royal Snooker user sees exactly one tenant and zero Blue Cue rows across
-  tables, products, pricing, expenses, equipment, memberships, stock and billing
+- A Royal Snooker user sees exactly the clubs they hold a membership in, and
+  zero Blue Cue rows across tables, products, pricing, expenses, equipment,
+  memberships, stock and billing
 - The read models leak nothing either — views are `security_invoker`
 - Cross-tenant `UPDATE`/`DELETE` match zero rows, and the target rows are
   verified unchanged afterwards
@@ -196,6 +206,39 @@ Running them as `postgres` would prove nothing: that role has `BYPASSRLS`.
   correction rather than editing history
 - Cross-tenant references are refused with `23503` even with RLS bypassed
 - Business dates honour the club's own trading-day cutoff
+
+**`04_multi_club.test.sql`**
+
+- An owner holds active memberships in several clubs and reads all of them
+- A second _active_ receptionist membership is refused (`23505`); a disabled one
+  is allowed, so a move between clubs is possible; owners are unconstrained
+- Each club keeps its own billing rules, visible as themselves rather than merged
+- A multi-club owner still sees zero rows from a club they do not own — tables,
+  sessions and expenses alike
+- A receptionist sees one club, not the second club their own owner also runs
+- Cross-club `UPDATE`/`DELETE` match zero rows; cross-club `INSERT` gives `42501`
+- **The platform cannot change a club's billing rules or rearrange its tables**
+- An owner cannot promote anyone to `OWNER`; the platform can, and can add a
+  second owner without displacing the first
+- Suspending one club leaves the owner's other clubs entirely untouched, and the
+  suspended one becomes invisible even to its own owner
+- Disabling an owner's account revokes every club at once
+- One owner cannot read another owner's takings
+
+**`05_platform_administration.test.sql`**
+
+- The platform dashboard, owner directory and club list return data to a platform
+  admin and **nothing at all** to an owner or a receptionist
+- An owner cannot create a club; the platform cannot create one for an email with
+  no account (`P0002`) rather than creating an ownerless club
+- Creating a club provisions its billing settings and table types in the same
+  transaction
+- An owner reads their own roster and nothing of another club's
+- An owner cannot revoke their own access, nor touch another club's staff
+- Revoking a receptionist's membership ends their access immediately
+- A club cannot be left without an active owner (`23514`)
+- A receptionist can append to their own club's audit trail, cannot append to
+  another club's, and cannot read back what they wrote
 
 ---
 

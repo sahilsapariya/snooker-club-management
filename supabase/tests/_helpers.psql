@@ -47,6 +47,10 @@ create or replace function pg_temp.royal() returns uuid language sql immutable
   as $fn$ select 'aaaaaaaa-0000-4000-8000-000000000001'::uuid $fn$;
 create or replace function pg_temp.blue() returns uuid language sql immutable
   as $fn$ select 'bbbbbbbb-0000-4000-8000-000000000002'::uuid $fn$;
+-- Cue Lounge is Royal's owner's *second* club. It exists so multi-club
+-- ownership is testable without hand-building data first.
+create or replace function pg_temp.lounge() returns uuid language sql immutable
+  as $fn$ select 'cccccccc-0000-4000-8000-000000000003'::uuid $fn$;
 
 -- Runs a DML statement as the *current* role (SECURITY INVOKER, so RLS applies)
 -- and reports how many rows it actually touched. Used to prove that a

@@ -11,10 +11,12 @@ export const queryKeys = {
   tables: {
     all: (tenantId: string) => ['tenant', tenantId, 'tables'] as const,
     overview: (tenantId: string) => ['tenant', tenantId, 'tables', 'overview'] as const,
+    managed: (tenantId: string) => ['tenant', tenantId, 'tables', 'managed'] as const,
     types: (tenantId: string) => ['tenant', tenantId, 'table-types'] as const,
   },
 
   sessions: {
+    all: (tenantId: string) => ['tenant', tenantId, 'sessions'] as const,
     open: (tenantId: string) => ['tenant', tenantId, 'sessions', 'open'] as const,
     recent: (tenantId: string) => ['tenant', tenantId, 'sessions', 'recent'] as const,
     byId: (tenantId: string, sessionId: string) =>
@@ -29,6 +31,19 @@ export const queryKeys = {
 
   pricing: {
     rules: (tenantId: string) => ['tenant', tenantId, 'pricing-rules'] as const,
+  },
+
+  billing: {
+    settings: (tenantId: string) => ['tenant', tenantId, 'billing-settings'] as const,
+  },
+
+  staff: {
+    list: (tenantId: string) => ['tenant', tenantId, 'staff'] as const,
+  },
+
+  activity: {
+    all: (tenantId: string) => ['tenant', tenantId, 'activity'] as const,
+    recent: (tenantId: string, limit: number) => ['tenant', tenantId, 'activity', limit] as const,
   },
 
   expenses: {
@@ -50,6 +65,10 @@ export const queryKeys = {
   },
 
   platform: {
+    overview: () => ['platform', 'overview'] as const,
+    owners: () => ['platform', 'owners'] as const,
+    ownerClubs: (ownerUserId: string) => ['platform', 'owners', ownerUserId, 'clubs'] as const,
+    clubs: () => ['platform', 'clubs'] as const,
     tenants: () => ['platform', 'tenants'] as const,
     tenant: (tenantId: string) => ['platform', 'tenants', tenantId] as const,
   },

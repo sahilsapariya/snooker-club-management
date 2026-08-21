@@ -31,7 +31,7 @@ const TICK_MS = 30_000;
 export function useTimeCompletedWatcher(
   tenantId: string | null,
   sessions: readonly SessionWithContext[] | undefined,
-  options: { readonly notify: boolean } = { notify: true },
+  options: { readonly notify: boolean; readonly clubName?: string } = { notify: true },
 ): void {
   const markTimeCompleted = useMarkTimeCompleted(tenantId);
   // Sessions already announced in this app run, so a re-render or a refetch
@@ -40,6 +40,7 @@ export function useTimeCompletedWatcher(
 
   const mutate = markTimeCompleted.mutate;
   const shouldNotify = options.notify;
+  const clubName = options.clubName ?? 'Your club';
 
   useEffect(() => {
     if (!tenantId || !sessions || sessions.length === 0) return;
@@ -69,6 +70,8 @@ export function useTimeCompletedWatcher(
         if (shouldNotify) {
           void presentLocalNotification({
             type: 'SESSION_TIME_COMPLETED',
+            clubName,
+            tenantId: session.tenant_id,
             tableName: session.club_table?.name ?? 'A table',
             sessionId: session.id,
             bookedMinutes: session.planned_duration_minutes,
@@ -80,5 +83,5 @@ export function useTimeCompletedWatcher(
     check();
     const interval = setInterval(check, TICK_MS);
     return () => clearInterval(interval);
-  }, [tenantId, sessions, mutate, shouldNotify]);
+  }, [tenantId, sessions, mutate, shouldNotify, clubName]);
 }

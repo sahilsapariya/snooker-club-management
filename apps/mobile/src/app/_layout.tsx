@@ -6,11 +6,12 @@ import { AppProviders } from '@/providers/AppProviders';
 /**
  * Root layout.
  *
- * Route groups mirror the three audiences of the product:
+ * Route groups mirror the audiences of the product:
  *
- *   (auth)      signed out
- *   (tenant)    club staff: owner and receptionist
- *   (platform)  product owner and support
+ *   (auth)       signed out
+ *   select-club  signed in, several clubs, none chosen yet
+ *   (tenant)     club staff: owner and receptionist, in one club at a time
+ *   (platform)   product owner and support
  *
  * The split keeps platform administration out of a club user's navigation
  * entirely. It is not a security boundary - Row Level Security is - but it does
@@ -22,6 +23,7 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
+        <Stack.Screen name="select-club" />
         <Stack.Screen name="(tenant)" />
         <Stack.Screen name="(platform)" />
       </Stack>

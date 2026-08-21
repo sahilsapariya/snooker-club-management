@@ -96,12 +96,26 @@ or revoke platform authority.
 
 ## Onboarding a club
 
-**1. Create the tenant.** As a signed-in platform admin:
+The order matters: **the owner's account exists first, then the club is created
+under it.** There is no intermediate state in which a club exists with nobody
+able to configure it.
+
+**1. Create the owner's account.** Dashboard → Authentication → Users. There is
+no self-signup, and the app cannot do this — creating an auth user needs the
+service-role key, which never reaches a phone.
+
+Skip this step if the person already owns a club with you. **One owner can run
+any number of clubs from the same login**, and that is the normal case for a
+customer opening a second venue.
+
+**2. Create the club under them.** In the app: **Platform → Create a club**. Or
+from SQL, as a signed-in platform admin:
 
 ```sql
-select public.platform_create_tenant(
+select public.platform_create_club(
   p_name          => 'Royal Snooker Club',
   p_slug          => 'royal-snooker',
+  p_owner_email   => 'owner@theirclub.com',
   p_primary_color => '#059669',
   p_currency_code => 'INR',
   p_timezone      => 'Asia/Kolkata',
@@ -109,24 +123,27 @@ select public.platform_create_tenant(
 );
 ```
 
-A trigger provisions it with billing settings, the three default table types and
-the default expense and product categories. Returns the new row, including its
-`id`.
+One transaction: creates the tenant, provisions it (billing settings, the three
+default table types, default expense and product categories), attaches the owner
+and writes the audit entry. If the email has no account it raises `P0002` with a
+hint and creates nothing.
 
-**2. Create their accounts.** Dashboard → Authentication → Users, one per person.
-There is no self-signup.
+**3. Hand over.** The owner adds their own receptionists from **More → Staff**,
+and configures their own tables, pricing, products and billing rules. You do not
+need to be involved, and in most cases you _cannot_ be: since migration `0015`
+club configuration requires `app.is_tenant_owner(tenant_id)`, which a platform
+admin is not.
 
-**3. Link them to the club:**
+If you do need to add someone yourself:
 
 ```sql
-select public.add_tenant_member('<tenant-uuid>', 'owner@theirclub.com', 'OWNER');
 select public.add_tenant_member('<tenant-uuid>', 'reception@theirclub.com', 'RECEPTIONIST');
 ```
 
-`add_tenant_member` is also callable by the club's own owner, so they can add
-receptionists themselves.
+Note that only you can grant `OWNER` — an owner cannot promote anyone to owner
+of their own club.
 
-**4. Set branding:**
+**4. Adjust branding** at any time, from **Platform → the club → Branding**, or:
 
 ```sql
 select public.platform_update_tenant(
@@ -135,16 +152,36 @@ select public.platform_update_tenant(
   p_theme_preset  => 'burgundy',
   p_logo_url      => 'https://cdn.example.com/logo.png'
 );
+-- removing a logo needs its own flag: NULL means "leave unchanged"
+select public.platform_update_tenant('<tenant-uuid>', p_clear_logo => true);
 ```
 
-**5. Hand over.** The owner configures their own tables, pricing, products and
-billing rules from inside the app.
-
-**6. Go live:**
+**5. Go live:**
 
 ```sql
 select public.platform_set_tenant_status('<tenant-uuid>', 'ACTIVE');
 ```
+
+### Adding a second club for an existing owner
+
+Exactly step 2 again with a different name and slug. Their next sign-in shows a
+club selector instead of going straight to the floor; the switcher lives in the
+header and in **More → Switch club**. Nothing is shared between the clubs —
+separate tables, staff, prices, books, alerts and colours.
+
+### Moving a club to a new owner
+
+```sql
+-- the club was sold: the previous owner loses access immediately
+select public.platform_assign_owner('<tenant-uuid>', 'new@owner.com', true);
+
+-- a partnership: both keep access
+select public.platform_assign_owner('<tenant-uuid>', 'second@owner.com', false);
+```
+
+`replace_existing` is explicit rather than inferred because the two cases are
+genuinely different commercial events, and guessing would be wrong half the
+time.
 
 ---
 
@@ -161,14 +198,40 @@ screen rather than a confusing empty one.
 
 `ARCHIVED` behaves the same way and signals a permanent end.
 
-Disabling one person instead:
+Suspending one club of a multi-club owner affects **only that club**. Their
+other clubs keep operating and stay in their switcher; the suspended one
+disappears from it, and if it was the club they had open they are returned to
+the selector.
+
+### Ending one person's access
+
+Two different levers, for two different situations.
+
+**One club only** — a receptionist leaving, or an owner selling one venue. From
+the app: **More → Staff → the person → Remove access**. Or:
 
 ```sql
-update public.profiles set is_active = false where email = 'someone@club.com';
--- or remove the membership entirely
-update public.tenant_memberships set status = 'DISABLED'
-where user_id = (select id from public.profiles where email = 'someone@club.com');
+select public.set_membership_status('<membership-uuid>', 'DISABLED');
 ```
+
+Never delete the membership. A former receptionist's name still appears against
+every session they opened and every payment they took; removing the row would
+orphan that history. `DISABLED` stops appearing in `app.tenant_ids()`, which is
+what actually ends access.
+
+Two guards are enforced in the function, not the UI: a club cannot be left
+without an active owner, and nobody can revoke their own access.
+
+**Every club at once** — an owner relationship ending. From the app:
+**Platform → Owners → the person → Disable this account**. Or:
+
+```sql
+select public.platform_set_owner_active('<user-uuid>', false);
+```
+
+This sets `profiles.is_active = false`, which `app.tenant_ids()` also checks, so
+they lose every club simultaneously. Their clubs keep operating — the
+receptionists are unaffected.
 
 A disabled account cannot re-enable itself — `app.profiles_guard` blocks it.
 

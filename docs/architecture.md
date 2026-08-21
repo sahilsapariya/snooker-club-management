@@ -71,25 +71,66 @@ There is no repository layer, no service layer and no DTO mapping. The generated
 database types are the domain types. Adding a translation layer between them
 would be work with no reader.
 
+The feature list, as of the multi-club restructure:
+
+| Feature         | Owns                                                      |
+| --------------- | --------------------------------------------------------- |
+| `auth`          | identity, the session union, club selection and switching |
+| `platform`      | owners, clubs, branding, status, ownership assignment     |
+| `staff`         | a club's roster: who works here and what they may reach   |
+| `tables`        | the floor view, and the owner's table inventory           |
+| `sessions`      | the session lifecycle, items, frames, close-and-pay       |
+| `billing`       | the pure charge engine, and the club's billing settings   |
+| `pricing`       | per-table-type rate rules                                 |
+| `products`      | catalogue and stock                                       |
+| `expenses`      | money out, with correction                                |
+| `cash`          | the daily till and its history                            |
+| `reports`       | aggregates over a range                                   |
+| `activity`      | the append-only audit trail                               |
+| `notifications` | the in-app inbox and push registration                    |
+
 ---
 
 ## State
 
-| Kind         | Home                      | Examples                            |
-| ------------ | ------------------------- | ----------------------------------- |
-| Auth state   | Zustand `useAuthStore`    | Supabase session, signed-in status  |
-| Server state | TanStack Query            | profile, membership, tenant, tables |
-| UI state     | component state / Zustand | form values, sheet open, filters    |
+| Kind         | Home                         | Examples                             |
+| ------------ | ---------------------------- | ------------------------------------ |
+| Auth state   | Zustand `useAuthStore`       | Supabase session, signed-in status   |
+| Active club  | Zustand `useActiveClubStore` | which of the caller's clubs is open  |
+| Server state | TanStack Query               | profile, memberships, tenant, tables |
+| UI state     | component state / Zustand    | form values, sheet open, filters     |
 
 The Supabase session is genuinely client state: restored from secure storage,
-mutated by a subscription, read synchronously during navigation. Role, club and
+mutated by a subscription, read synchronously during navigation. Role, clubs and
 profile are **server state** and live in the query cache keyed by user id — so
 signing in as somebody else cannot show the previous user's club from memory.
 `SIGNED_OUT` also calls `queryClient.clear()`.
 
+The active club is client state because it is a _choice_, not data. It decides
+what the app shows and never what the database allows — anyone can put any uuid
+in it, and RLS is what makes that useless. It is persisted so reopening the app
+mid-shift returns you to where you were, and re-validated against live
+memberships on every launch: a club you have been removed from, or that has been
+suspended, is discarded rather than honoured.
+
 Query keys are tenant-scoped (`['tenant', tenantId, 'tables']`), which makes
 cache invalidation on club boundaries trivial and accidental cross-tenant cache
-hits impossible.
+hits impossible. Platform data lives under `['platform', …]` so a club switch
+cannot evict it.
+
+### Switching club
+
+Order matters, and `useSwitchClub` is the only place it happens:
+
+1. **Remove** the outgoing club's entries — not invalidate. An invalidated entry
+   is still served while it refetches, which is exactly the "club A's takings
+   under club B's name and colours" flash worth preventing.
+2. Record the new choice, and persist it.
+3. Invalidate the incoming club, which may have been visited earlier this
+   session and be stale.
+
+Because identity (which clubs you may reach) is keyed by _user_ and club data by
+_tenant_, switching refetches the club and never the membership set.
 
 ---
 
@@ -99,9 +140,21 @@ hits impossible.
 closed union:
 
 ```
-loading · unauthenticated · error · account-disabled
-no-tenant · tenant-suspended · platform-admin · tenant-user
+loading · unauthenticated · error · account-disabled · no-tenant
+tenant-suspended · platform-admin · club-selection · tenant-user
 ```
+
+`club-selection` is the multi-club case: signed in, several clubs reachable,
+none chosen. `resolveActiveClub(clubs, stored)` decides — a pure function, so
+every branch is testable without a store or a network:
+
+| Situation                     | Result                       |
+| ----------------------------- | ---------------------------- |
+| no clubs                      | `null` → `no-tenant`         |
+| stored club still reachable   | that club                    |
+| stored club gone or suspended | fall through, and clear it   |
+| exactly one reachable club    | that club, no selector shown |
+| several reachable clubs       | `null` → `club-selection`    |
 
 `src/app/index.tsx` switches on it exhaustively and redirects. Modelling it as a
 union rather than a bag of booleans means a new screen cannot forget that an
@@ -114,9 +167,52 @@ Route groups follow the same split:
 src/app/
 ├── index.tsx        the gate
 ├── (auth)/          signed out
-├── (tenant)/        club staff: tables, sessions, alerts, settings
-└── (platform)/      product owner: clubs, club detail
+├── select-club.tsx  signed in, several clubs, none chosen
+├── (tenant)/        club staff, in ONE club at a time
+└── (platform)/      product owner: owners, clubs, branding
 ```
+
+`(tenant)` renders `ActiveClubBar` above the tabs — in the shell, not on each
+screen, so no screen can be built that forgets to say which club its numbers
+belong to. The switch affordance only appears for someone with more than one.
+
+---
+
+## The ownership model
+
+```
+PLATFORM ──┬── OWNER A ──┬── CLUB 1 ── receptionists
+           │             └── CLUB 2 ── receptionists
+           └── OWNER B ───── CLUB 3 ── receptionists
+```
+
+`tenant_memberships` is the only thing that expresses this. There is no owners
+table: **ownership is a membership with `role = 'OWNER'`**, which is why an
+owner running four clubs needs no special case anywhere — they simply hold four
+memberships.
+
+That decision is what made the multi-club change small. Every RLS policy was
+already written as _"is the caller a member of the tenant this row belongs to"_
+rather than _"what is the caller's tenant"_, and `app.tenant_ids()` already
+returned a set. One partial unique index was the only thing physically
+preventing it.
+
+### Who may do what to a club
+
+| Action                                   | Platform | Owner | Receptionist |
+| ---------------------------------------- | :------: | :---: | :----------: |
+| Create a club, brand it, suspend it      |    ✓     |       |              |
+| Assign or replace its owner              |    ✓     |       |              |
+| Tables, pricing, products, billing rules |          |   ✓   |              |
+| Add and remove receptionists             |    ✓     |   ✓   |              |
+| Grant OWNER                              |    ✓     |       |              |
+| Sessions, payments, expenses, cash       |          |   ✓   |      ✓       |
+| Read the audit trail                     |    ✓     |   ✓   |              |
+| Write to the audit trail                 |    ✓     |   ✓   |      ✓       |
+
+The two blank cells that surprise people are deliberate. The platform **cannot**
+configure a club — how it charges is its own commercial decision. And an owner
+**cannot** mint another owner — that is the relationship the platform sells.
 
 ---
 
@@ -222,12 +318,17 @@ midnight does not see its late sessions land on the wrong day.
   server-side worker holding an Expo access token (see
   [notifications.md](notifications.md)) and a development build.
 - **Equipment screens.** The schema and RLS exist; no UI yet.
-- **Platform admin editing.** The platform screens are read-only; branding
-  changes go through the RPCs but have no form yet.
+- **Creating login accounts.** Making a Supabase Auth user needs the service
+  role, which never reaches the app. Accounts are created in the dashboard or
+  via the Admin API first; the app links them to clubs. `platform_create_club`
+  and `add_tenant_member` both raise `P0002` with a hint rather than silently
+  creating something half-made.
 - **Offline sync.** Query caching handles brief drops. Real offline-first is a
   separate design.
-- **Multi-club staff.** The membership table is many-to-many already; a single
-  partial unique index enforces one active club per user today.
+- **Multi-club _staff_.** Owners span clubs; receptionists do not. A partial
+  unique index (`tenant_memberships_single_active_club_for_staff`) enforces it.
+  Relaxing that is one index, not a redesign — but the operational question
+  ("whose shift is this?") should be answered first.
 
 Not planned: a repository layer, a DTO layer, microservices, or a shared
 `packages/` module until two consumers actually exist.
@@ -241,6 +342,16 @@ one-handed at a counter:
 Tables · Sessions · Cash · Alerts · More
 ```
 
-Reports, Manage and Settings are routable but hidden from the bar
-(`href: null` in `(tenant)/_layout.tsx`) and reached from **More**. The tabs are
-the four things a receptionist touches during a shift.
+Everything used occasionally is routable but hidden from the bar (`href: null`
+in `(tenant)/_layout.tsx`) and reached from **More**:
+
+```
+reports · manage · settings · expenses
+tables-setup · staff · billing · activity      (owner only)
+```
+
+The tabs are the four things a receptionist touches during a shift. Owner-only
+destinations are still _listed_ for a receptionist, marked as such, so they
+learn the app has them and who to ask — rather than the app appearing to be
+missing features. The screens show a locked state, and the database refuses the
+write regardless of what the UI shows.

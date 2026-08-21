@@ -15,11 +15,21 @@ import { useMarkNotificationRead, useNotificationInbox } from '@/features/notifi
 import { formatRelative } from '@/lib/format';
 import { useTheme } from '@/theme';
 
-/** Tenant-scoped in-app inbox. Push delivery is added server-side later. */
+/**
+ * This club's inbox.
+ *
+ * Scoped to the active club, never merged across an owner's clubs. Two clubs'
+ * alerts in one list would be a list you cannot act on: "Table 3's time is up"
+ * needs somebody standing in the right building.
+ *
+ * Push delivery is added server-side later; those notifications name the club
+ * in their title, because a lock screen has no active club to infer from.
+ */
 export default function NotificationsScreen() {
   const theme = useTheme();
   const session = useAppSession();
   const tenantId = session.status === 'tenant-user' ? session.tenant.id : null;
+  const clubName = session.status === 'tenant-user' ? session.tenant.name : null;
 
   const { data, isPending, isError, error, refetch, isRefetching } = useNotificationInbox(tenantId);
   const markRead = useMarkNotificationRead(tenantId);
@@ -27,7 +37,10 @@ export default function NotificationsScreen() {
   return (
     <Screen padded={false} testID="notifications-screen">
       <View style={{ paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md }}>
-        <SectionHeader title="Alerts" subtitle="Everything happening at this club" />
+        <SectionHeader
+          title="Alerts"
+          subtitle={clubName ? `Everything happening at ${clubName}` : 'Everything happening here'}
+        />
       </View>
 
       {isPending ? (
