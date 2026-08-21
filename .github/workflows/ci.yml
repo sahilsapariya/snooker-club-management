@@ -69,6 +69,9 @@ jobs:
 
       # A drifted checked-in types file means the client is typed against a
       # schema that no longer exists.
+      # Compared byte-for-byte against the generator's raw output. The file is
+      # in .prettierignore precisely so there is one canonical form of it -
+      # running a formatter over it, even accidentally, breaks this check.
       - name: Check generated types are current
         run: |
           supabase gen types typescript --local --schema public \

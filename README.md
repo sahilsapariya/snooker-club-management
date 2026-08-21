@@ -746,6 +746,11 @@ Regenerate it after every migration and commit the result. The app has no
 `any` casts around database access; a schema change that breaks the client shows
 up in `pnpm typecheck`.
 
+The file is listed in `.prettierignore`, and CI compares it byte-for-byte with
+the generator's raw output. Do not run a formatter over it — a reformatted copy
+is a _correct_ file that CI will still reject, which is a confusing five minutes
+to debug.
+
 ---
 
 ## 15. Testing
