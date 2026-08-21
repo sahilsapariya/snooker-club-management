@@ -33,6 +33,7 @@ Postgres 17 on Supabase. Every schema change is a migration in
 | `0022_session_payments`         | payments become rows; the session's totals follow them           |
 | `0023_money_follows_the_ledger` | the till counts by the day money arrived, not the day of trade   |
 | `0024_close_session`            | closing and its first payment, in one transaction                |
+| `0025_equipment_operations`     | staff report condition; the owner configures and retires         |
 
 RLS is enabled in the table-creation migrations and the policies arrive in
 `0009`. Between the two, the tables deny everything — the safe direction to fail.

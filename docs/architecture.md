@@ -83,6 +83,7 @@ The feature list, as of the multi-club restructure:
 | `billing`       | the pure charge engine, and the club's billing settings   |
 | `pricing`       | per-table-type rate rules                                 |
 | `products`      | catalogue and stock                                       |
+| `equipment`     | the asset register, and its condition                     |
 | `payments`      | money in: the ledger, debts, and settling one             |
 | `expenses`      | money out, with correction                                |
 | `cash`          | the daily till and its history                            |
@@ -205,6 +206,8 @@ preventing it.
 | Create a club, brand it, suspend it      |    ✓     |       |              |
 | Assign or replace its owner              |    ✓     |       |              |
 | Tables, pricing, products, billing rules |          |   ✓   |              |
+| Add, price or retire equipment           |          |   ✓   |              |
+| Report a change of equipment condition   |          |   ✓   |      ✓       |
 | Add and remove receptionists             |    ✓     |   ✓   |              |
 | Grant OWNER                              |    ✓     |       |              |
 | Sessions, payments, expenses, cash       |          |   ✓   |      ✓       |
@@ -321,7 +324,6 @@ midnight does not see its late sessions land on the wrong day.
   ticket ids between the send and the poll. Until it exists, some dead tokens
   stay active and are sent to harmlessly. See
   [notifications.md](notifications.md).
-- **Equipment screens.** The schema and RLS exist; no UI yet.
 - **Creating login accounts.** Making a Supabase Auth user needs the service
   role, which never reaches the app. Accounts are created in the dashboard or
   via the Admin API first; the app links them to clubs. `platform_create_club`
@@ -350,8 +352,8 @@ Everything used occasionally is routable but hidden from the bar (`href: null`
 in `(tenant)/_layout.tsx`) and reached from **More**:
 
 ```
-reports · manage · settings · expenses · debts
-tables-setup · staff · billing · activity        (owner only)
+reports · settings · equipment · expenses · debts
+manage · tables-setup · staff · billing · activity   (owner only)
 ```
 
 The tabs are the four things a receptionist touches during a shift. Owner-only

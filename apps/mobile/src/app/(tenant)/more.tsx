@@ -4,6 +4,7 @@ import {
   Building2,
   Calculator,
   HandCoins,
+  Package,
   History,
   LogOut,
   Receipt,
@@ -113,6 +114,15 @@ export default function MoreScreen() {
             showChevron
             onPress={() => router.push('/(tenant)/debts')}
             testID="more-debts"
+          />
+          <Divider />
+          <ListItem
+            title="Equipment"
+            subtitle="Cues, rests and ball sets — anyone can flag a problem"
+            icon={Package}
+            showChevron
+            onPress={() => router.push('/(tenant)/equipment')}
+            testID="more-equipment"
           />
           <Divider />
           <ListItem

@@ -88,7 +88,7 @@ See [section 9](#9-how-tenant-isolation-works) and
 | Per-club audit trail                                  | done                                                      |
 | Platform admin: owners, clubs, create, brand, assign  | done                                                      |
 | Notification events, inbox and push delivery          | done (see [docs/notifications.md](docs/notifications.md)) |
-| Equipment screens                                     | not built                                                 |
+| Equipment register, with condition reporting          | done                                                      |
 | Creating login accounts from inside the app           | not built, by design — needs the service role             |
 
 Two business rules the whole design protects:
@@ -548,9 +548,9 @@ branding" a property of the privilege system rather than of one policy being
 written correctly.
 
 Route guards are UX, not security. All of the above is verified by
-`pnpm db:test` — 280 assertions covering cross-tenant reads, cross-tenant
+`pnpm db:test` — 302 assertions covering cross-tenant reads, cross-tenant
 writes, role escalation, disabled accounts, suspended tenants, multi-club
-ownership, notification audiences, payment attribution and privilege shape. See [docs/security.md](docs/security.md).
+ownership, notification audiences, payment attribution, equipment permissions and privilege shape. See [docs/security.md](docs/security.md).
 
 ---
 
@@ -762,14 +762,14 @@ to debug.
 ```bash
 pnpm test        # Jest: 194 assertions — theme contrast, money, durations, secure
                  # storage, errors, session states, club resolution, cache isolation
-pnpm db:test     # pgTAP: 280 assertions — isolation, roles, business rules,
+pnpm db:test     # pgTAP: 302 assertions — isolation, roles, business rules,
                  # multi-club ownership, platform administration, notifications,
                  # the payments ledger
 ```
 
 The database suite is the important one. It runs as the `authenticated` Postgres
 role, because running as `postgres` would prove nothing — that role has
-`BYPASSRLS`. Seven files:
+`BYPASSRLS`. Eight files:
 
 | File                                  | Covers                                                                |
 | ------------------------------------- | --------------------------------------------------------------------- |
@@ -780,6 +780,7 @@ role, because running as `postgres` would prove nothing — that role has
 | `05_platform_administration.test.sql` | platform-only reads, club creation, staffing guards, the audit trail  |
 | `06_notifications.test.sql`           | which events fire, who they reach, and what the push queue hands over |
 | `07_payments.test.sql`                | split payments, debts settled later, and which till the cash lands in |
+| `08_equipment.test.sql`               | what staff may change on equipment, and what only the owner may       |
 
 ---
 

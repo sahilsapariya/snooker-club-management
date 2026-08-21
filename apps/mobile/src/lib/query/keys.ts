@@ -33,6 +33,10 @@ export const queryKeys = {
     rules: (tenantId: string) => ['tenant', tenantId, 'pricing-rules'] as const,
   },
 
+  equipment: {
+    all: (tenantId: string) => ['tenant', tenantId, 'equipment'] as const,
+  },
+
   payments: {
     outstanding: (tenantId: string) => ['tenant', tenantId, 'payments', 'outstanding'] as const,
     forSession: (tenantId: string, sessionId: string) =>

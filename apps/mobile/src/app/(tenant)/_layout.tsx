@@ -122,6 +122,7 @@ export default function TenantLayout() {
           <Tabs.Screen name="activity" options={{ href: null, title: 'Activity' }} />
           <Tabs.Screen name="expenses" options={{ href: null, title: 'Expenses' }} />
           <Tabs.Screen name="debts" options={{ href: null, title: 'Owed to the club' }} />
+          <Tabs.Screen name="equipment" options={{ href: null, title: 'Equipment' }} />
         </Tabs>
       </View>
     </SafeAreaView>
