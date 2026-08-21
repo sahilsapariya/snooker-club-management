@@ -791,12 +791,13 @@ Push notifications need a development build, not Expo Go, and an EAS project id
 
 ## 17. Further reading
 
-| Document                                             | Contents                                             |
-| ---------------------------------------------------- | ---------------------------------------------------- |
-| [docs/architecture.md](docs/architecture.md)         | module boundaries, state strategy, adding a feature  |
-| [docs/database.md](docs/database.md)                 | schema tour, money and time representation           |
-| [docs/security.md](docs/security.md)                 | the four isolation layers, threat notes, checklist   |
-| [docs/theming.md](docs/theming.md)                   | token reference and how derivation works             |
-| [docs/operations.md](docs/operations.md)             | provisioning clubs and staff, suspension, migrations |
-| [docs/notifications.md](docs/notifications.md)       | push architecture and the delivery worker            |
-| [docs/audit-2026-08-21.md](docs/audit-2026-08-21.md) | a full screen-by-screen audit of the app             |
+| Document                                                                               | Contents                                             |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| [docs/architecture.md](docs/architecture.md)                                           | module boundaries, state strategy, adding a feature  |
+| [docs/database.md](docs/database.md)                                                   | schema tour, money and time representation           |
+| [docs/security.md](docs/security.md)                                                   | the four isolation layers, threat notes, checklist   |
+| [docs/theming.md](docs/theming.md)                                                     | token reference and how derivation works             |
+| [docs/operations.md](docs/operations.md)                                               | provisioning clubs and staff, suspension, migrations |
+| [docs/notifications.md](docs/notifications.md)                                         | push architecture and the delivery worker            |
+| [docs/audit-2026-08-21.md](docs/audit-2026-08-21.md)                                   | a full screen-by-screen audit of the app             |
+| [docs/multi-club-restructure-2026-08-21.md](docs/multi-club-restructure-2026-08-21.md) | the multi-club ownership restructure, in full        |
