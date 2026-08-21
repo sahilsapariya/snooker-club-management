@@ -46,9 +46,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pinned rather than `latest` for two reasons: resolving "latest" hits the
+      # GitHub API and fails the whole job when that rate-limits, and a moving
+      # CLI version means CI is not reproducible. Keep this in step with the
+      # `supabase` devDependency in package.json.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.115.0
 
       # Starts Postgres, applies every migration in order and runs seed.sql.
       # A migration that does not apply from scratch fails here.
