@@ -14,7 +14,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 \ir _helpers.psql
-select plan(50);
+select plan(56);
 
 -- ---------------------------------------------------------------------------
 -- Receptionist: may operate, may not configure
@@ -256,6 +256,48 @@ select is((select count(*)::int from public.club_tables), 0,
           'a suspended club exposes no operational data');
 select is((select app.get_user_tenant_id()), null,
           'a suspended club resolves to no active tenant');
+
+-- ---------------------------------------------------------------------------
+-- Club configuration is owner-only; daily operations are not
+-- ---------------------------------------------------------------------------
+select pg_temp.act_as(pg_temp.royal_reception());
+
+select throws_ok(
+  $$insert into public.products (tenant_id, name, selling_price_minor)
+    values ('aaaaaaaa-0000-4000-8000-000000000001', 'Rogue Item', 100)$$,
+  '42501', null,
+  'receptionist cannot add a product to the catalogue');
+
+select is(
+  pg_temp.rows_affected($$update public.products set stock_quantity = 9999$$),
+  0, 'receptionist cannot overwrite a stock count directly');
+
+-- But posting to the ledger IS a daily operation - that is how stock moves.
+select lives_ok(
+  $$insert into public.inventory_movements (tenant_id, product_id, movement_type, quantity_delta)
+    select 'aaaaaaaa-0000-4000-8000-000000000001', id, 'ADJUSTMENT', -1
+      from public.products
+     where tenant_id = 'aaaaaaaa-0000-4000-8000-000000000001' limit 1$$,
+  'receptionist can post a stock movement');
+
+select lives_ok(
+  $$insert into public.cash_closings (tenant_id, business_date, opening_cash_minor, opened_by)
+    values ('aaaaaaaa-0000-4000-8000-000000000001', current_date - 30, 100000,
+            '33333333-3333-4333-8333-333333333333')$$,
+  'receptionist can open the till - it is a daily operation');
+
+select pg_temp.act_as(pg_temp.royal_owner());
+
+select lives_ok(
+  $$insert into public.products (tenant_id, name, selling_price_minor)
+    values ('aaaaaaaa-0000-4000-8000-000000000001', 'Owner Added Item', 4200)$$,
+  'owner can add a product');
+
+select is(
+  pg_temp.rows_affected(
+    $$update public.pricing_rules set rate_minor = 12345
+       where tenant_id = 'aaaaaaaa-0000-4000-8000-000000000001' and is_default$$),
+  3, 'owner can change their own pricing');
 
 -- ---------------------------------------------------------------------------
 -- Table privileges are exactly what PostgREST needs and nothing more.

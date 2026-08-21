@@ -8,6 +8,7 @@ import {
   Divider,
   IconButton,
   ListItem,
+  MoneyInput,
   MoneyValue,
   QuantityStepper,
   SectionHeader,
@@ -18,7 +19,12 @@ import {
   Timer,
   useToast,
 } from '@/components/ui';
-import { calculateSessionCharge, type BillingSettings } from '@/features/billing';
+import {
+  calculateSessionCharge,
+  paymentMethodFor,
+  settleSession,
+  type BillingSettings,
+} from '@/features/billing';
 import { useProducts } from '@/features/products';
 import { formatDuration, type CurrencyConfig } from '@/lib/format';
 import { useTheme } from '@/theme';
@@ -80,6 +86,8 @@ export function SessionSheet({
 
   const [showCatalogue, setShowCatalogue] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
+  const [discountMinor, setDiscountMinor] = useState(0);
+  const [tenderedMinor, setTenderedMinor] = useState<number | null>(null);
 
   // `line_total_minor` is a generated column, so PostgREST types it nullable
   // even though the database always computes it.
@@ -110,7 +118,17 @@ export function SessionSheet({
   if (!session) return null;
 
   const tableChargeMinor = charge?.tableChargeMinor ?? 0;
-  const totalMinor = tableChargeMinor + itemsTotalMinor;
+
+  // `tenderedMinor === null` means the receptionist has not touched the amount,
+  // which is the overwhelmingly common "paid in full" case. Defaulting to the
+  // payable amount keeps that a single tap while still allowing a part payment.
+  const settlement = settleSession({
+    tableChargeMinor,
+    itemsTotalMinor,
+    discountMinor,
+    tenderedMinor: tenderedMinor ?? Math.max(0, tableChargeMinor + itemsTotalMinor - discountMinor),
+  });
+  const totalMinor = settlement.payableMinor;
 
   function handleAddProduct(productId: string): void {
     if (!session) return;
@@ -128,17 +146,21 @@ export function SessionSheet({
         sessionId: session.id,
         endedBy: userId,
         charge,
-        discountMinor: 0,
+        discountMinor: settlement.discountMinor,
         payment: {
-          status: 'PAID',
-          method: paymentMethod,
-          paidAmountMinor: totalMinor,
+          status: settlement.paymentStatus,
+          method: paymentMethodFor(settlement, paymentMethod),
+          paidAmountMinor: settlement.paidAmountMinor,
         },
         notes: null,
       },
       {
         onSuccess: () => {
-          toast.success(`${session.club_table?.name ?? 'Table'} closed and paid`);
+          toast.success(
+            settlement.outstandingMinor > 0
+              ? `${session.club_table?.name ?? 'Table'} closed with a balance owing`
+              : `${session.club_table?.name ?? 'Table'} closed and paid`,
+          );
           onClose();
         },
         onError: (error) => toast.error(error, 'Could not close the session.'),
@@ -176,7 +198,13 @@ export function SessionSheet({
             <MoneyValue amountMinor={totalMinor} currency={currency} variant="titleLg" />
           </View>
           <Button
-            label={`Close & take ${PAYMENT_METHODS.find((m) => m.value === paymentMethod)?.label.toLowerCase() ?? 'payment'}`}
+            label={
+              settlement.paidAmountMinor === 0
+                ? 'Close without payment'
+                : settlement.outstandingMinor > 0
+                  ? 'Close with balance owing'
+                  : `Close & take ${PAYMENT_METHODS.find((m) => m.value === paymentMethod)?.label.toLowerCase() ?? 'payment'}`
+            }
             size="lg"
             fullWidth
             loading={closeSession.isPending}
@@ -346,12 +374,60 @@ export function SessionSheet({
         </View>
 
         {/* ---- Payment ------------------------------------------------- */}
-        <Select
-          label="Payment method"
-          value={paymentMethod}
-          onChange={setPaymentMethod}
-          options={[...PAYMENT_METHODS]}
-        />
+        <View style={{ gap: theme.spacing.lg }}>
+          <SectionHeader title="Payment" />
+
+          <MoneyInput
+            label="Discount"
+            value={discountMinor}
+            onChange={setDiscountMinor}
+            currency={currency}
+            hint="Goodwill reduction. Cannot be more than the bill."
+            testID="discount-input"
+          />
+
+          <MoneyInput
+            label="Amount received"
+            value={settlement.paidAmountMinor + settlement.changeMinor}
+            onChange={setTenderedMinor}
+            currency={currency}
+            hint="Leave as-is for payment in full."
+            testID="tendered-input"
+          />
+
+          <Select
+            label="Payment method"
+            value={paymentMethod}
+            onChange={setPaymentMethod}
+            options={[...PAYMENT_METHODS]}
+          />
+
+          <View style={{ gap: theme.spacing.xs }}>
+            {settlement.discountMinor > 0 ? (
+              <Row label="Discount" currency={currency} amountMinor={-settlement.discountMinor} />
+            ) : null}
+            {settlement.changeMinor > 0 ? (
+              <Row
+                label="Change to give"
+                currency={currency}
+                amountMinor={settlement.changeMinor}
+              />
+            ) : null}
+            {settlement.outstandingMinor > 0 ? (
+              <Row
+                label="Still owing"
+                currency={currency}
+                amountMinor={settlement.outstandingMinor}
+                tone="error"
+              />
+            ) : null}
+            {settlement.warnings.map((warning) => (
+              <Text key={warning} variant="caption" color="warning">
+                {warning}
+              </Text>
+            ))}
+          </View>
+        </View>
 
         <Button
           label="Cancel this session"
@@ -362,5 +438,26 @@ export function SessionSheet({
         />
       </View>
     </Sheet>
+  );
+}
+
+function Row({
+  label,
+  amountMinor,
+  currency,
+  tone = 'textSecondary',
+}: {
+  readonly label: string;
+  readonly amountMinor: number;
+  readonly currency: CurrencyConfig;
+  readonly tone?: 'textSecondary' | 'error' | 'success';
+}) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Text variant="bodySm" color={tone} style={{ flex: 1 }}>
+        {label}
+      </Text>
+      <MoneyValue amountMinor={amountMinor} currency={currency} variant="bodySm" tone={tone} />
+    </View>
   );
 }

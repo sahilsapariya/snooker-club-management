@@ -12,7 +12,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 \ir _helpers.psql
-select plan(30);
+select plan(34);
 
 -- ---------------------------------------------------------------------------
 -- Reads: a member sees their own club and nothing else
@@ -117,6 +117,35 @@ select throws_ok($$select count(*) from public.club_tables$$, '42501', null,
                  'anonymous callers cannot read club tables');
 select throws_ok($$select count(*) from public.sessions$$, '42501', null,
                  'anonymous callers cannot read sessions');
+
+-- ---------------------------------------------------------------------------
+-- daily_cash_summary must not become a cross-tenant leak
+-- ---------------------------------------------------------------------------
+-- It is SECURITY INVOKER on purpose. A definer function here would happily
+-- total up another club's takings for anyone who guessed a tenant id, so this
+-- asserts the numbers stay empty when pointed at a club the caller is not in.
+select pg_temp.act_as(pg_temp.royal_reception());
+
+select isnt(
+  (select total_expenses_minor
+     from public.daily_cash_summary(pg_temp.royal(), current_date)),
+  0::bigint,
+  'a member sees their own club''s daily totals');
+
+select is(
+  (select total_received_minor
+     from public.daily_cash_summary(pg_temp.blue(), current_date)),
+  0::bigint,
+  'pointing the cash summary at another club returns nothing, not their takings');
+
+select is(
+  (select total_expenses_minor
+     from public.daily_cash_summary(pg_temp.blue(), current_date)),
+  0::bigint,
+  'and no spend either');
+
+select is((select count(*)::int from public.cash_closings where tenant_id = pg_temp.blue()), 0,
+          'Royal staff see zero Blue Cue cash closings');
 
 -- ---------------------------------------------------------------------------
 -- The platform operator sees across clubs

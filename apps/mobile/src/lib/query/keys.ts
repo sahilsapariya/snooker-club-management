@@ -31,6 +31,19 @@ export const queryKeys = {
     rules: (tenantId: string) => ['tenant', tenantId, 'pricing-rules'] as const,
   },
 
+  expenses: {
+    list: (tenantId: string) => ['tenant', tenantId, 'expenses'] as const,
+    categories: (tenantId: string) => ['tenant', tenantId, 'expense-categories'] as const,
+  },
+
+  cash: {
+    summary: (tenantId: string, businessDate: string) =>
+      ['tenant', tenantId, 'cash', 'summary', businessDate] as const,
+    closing: (tenantId: string, businessDate: string) =>
+      ['tenant', tenantId, 'cash', 'closing', businessDate] as const,
+    recent: (tenantId: string) => ['tenant', tenantId, 'cash', 'recent'] as const,
+  },
+
   notifications: {
     inbox: (tenantId: string) => ['tenant', tenantId, 'notifications'] as const,
     unreadCount: (tenantId: string) => ['tenant', tenantId, 'notifications', 'unread'] as const,

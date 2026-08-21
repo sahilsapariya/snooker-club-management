@@ -1,5 +1,5 @@
 import { Redirect, Tabs } from 'expo-router';
-import { Bell, LayoutGrid, Settings, Timer } from 'lucide-react-native';
+import { Bell, LayoutGrid, Settings, SlidersHorizontal, Timer, Wallet } from 'lucide-react-native';
 
 import { LoadingState, Screen } from '@/components/ui';
 import { useAppSession } from '@/features/auth';
@@ -63,10 +63,24 @@ export default function TenantLayout() {
         }}
       />
       <Tabs.Screen
+        name="cash"
+        options={{
+          title: 'Cash',
+          tabBarIcon: ({ color, size }) => <Wallet color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="notifications"
         options={{
           title: 'Alerts',
           tabBarIcon: ({ color, size }) => <Bell color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="manage"
+        options={{
+          title: 'Manage',
+          tabBarIcon: ({ color, size }) => <SlidersHorizontal color={color} size={size} />,
         }}
       />
       <Tabs.Screen

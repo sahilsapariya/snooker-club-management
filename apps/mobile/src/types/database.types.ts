@@ -1419,6 +1419,20 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      daily_cash_summary: {
+        Args: { p_business_date: string; p_tenant_id: string }
+        Returns: {
+          business_date: string
+          cash_expenses_minor: number
+          cash_received_minor: number
+          non_cash_expenses_minor: number
+          non_cash_received_minor: number
+          outstanding_minor: number
+          sessions_closed: number
+          total_expenses_minor: number
+          total_received_minor: number
+        }[]
+      }
       get_user_tenant_id: { Args: never; Returns: string }
       is_platform_admin: { Args: never; Returns: boolean }
       platform_create_tenant: {

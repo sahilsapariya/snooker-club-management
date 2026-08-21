@@ -41,3 +41,4 @@ export {
   type ListItemProps,
   type QuantityStepperProps,
 } from './ListItem';
+export { MoneyInput, type MoneyInputProps } from './MoneyInput';
